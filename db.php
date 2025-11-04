@@ -27,11 +27,11 @@ try {
     $pdo = new PDO($dsn, $user, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Create table if it doesn't exist (includes password column)
+    // --- Create students table ---
     $pdo->exec("CREATE TABLE IF NOT EXISTS students (
         id SERIAL PRIMARY KEY,
         student_id_text VARCHAR(20) UNIQUE,
-        usn VARCHAR(20) UNIQUE, /* Added USN column */
+        usn VARCHAR(20) UNIQUE,
         student_name VARCHAR(255),
         dob DATE,
         father_name VARCHAR(255),
@@ -65,9 +65,29 @@ try {
     $pdo->exec("ALTER TABLE students ADD CONSTRAINT students_email_unique UNIQUE (email);");
     $pdo->exec("ALTER TABLE students ADD CONSTRAINT students_usn_unique UNIQUE (usn);");
 
+    // --- NEW TABLES FOR TEST ALLOCATION ---
+    $pdo->exec("CREATE TABLE IF NOT EXISTS classes (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE
+    );");
+    
+    $pdo->exec("CREATE TABLE IF NOT EXISTS question_papers (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        content TEXT
+    );");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS test_allocation (
+        id SERIAL PRIMARY KEY,
+        class_id INT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+        qp_id INT NOT NULL REFERENCES question_papers(id) ON DELETE CASCADE,
+        UNIQUE(class_id, qp_id)
+    );");
+    
+    // --- (You can add other tables like users, subjects, etc. here) ---
+
 
 } catch (PDOException $e) {
-    // Provide a more user-friendly error in production if needed
     die("Database connection failed: " . $e->getMessage());
 }
 ?>
