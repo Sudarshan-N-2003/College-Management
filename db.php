@@ -1,4 +1,10 @@
 <?php
+/**
+ * db.php
+ * Database connection + automatic migrations
+ * This version contains the correct error handling for PostgreSQL.
+ */
+
 // Get the database connection URL from Render's environment variables
 $database_url = getenv('DATABASE_URL');
 
@@ -37,13 +43,23 @@ function run_migration(PDO $pdo, string $migration_id, string $sql) {
 
     // Migration not run, try to execute it
     try {
+        // --- THIS IS THE FIX ---
+        // We run the migration in its OWN transaction.
+        // This isolates its failure and prevents it from aborting the main $pdo connection.
+        $pdo->beginTransaction();
         $pdo->exec($sql);
+        
         // Log that this migration is complete
         $log_stmt = $pdo->prepare("INSERT INTO db_migrations (migration_id) VALUES (?)");
         $log_stmt->execute([$migration_id]);
+        
+        // Commit this specific migration
+        $pdo->commit();
     
     } catch (PDOException $e) {
-        // --- THIS IS THE FIX ---
+        // Roll back THIS migration's transaction
+        $pdo->rollBack();
+
         // Catch known "already exists" errors and log them as a success
         // 42P07: duplicate_table
         // 42701: duplicate_column
@@ -56,7 +72,8 @@ function run_migration(PDO $pdo, string $migration_id, string $sql) {
             // We must use ON CONFLICT to avoid a race condition.
             $log_stmt = $pdo->prepare("INSERT INTO db_migrations (migration_id) VALUES (?) ON CONFLICT (migration_id) DO NOTHING");
             $log_stmt->execute([$migration_id]);
-            // We caught the error, so the transaction is not aborted.
+            // We caught the error, and by rolling back, we have cleared the
+            // error state from the $pdo object. The connection is now healthy.
         } else {
             // A different, more serious error occurred.
             throw $e; // Re-throw the error
@@ -69,86 +86,78 @@ try {
     $pdo = new PDO($dsn, $user, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // --- 1. CREATE THE MIGRATIONS TABLE (outside a transaction) ---
+    // --- 1. CREATE THE MIGRATIONS TABLE ---
+    // This table will keep a log of all changes we make.
     $pdo->exec("CREATE TABLE IF NOT EXISTS db_migrations (
         migration_id VARCHAR(255) PRIMARY KEY,
         run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );");
 
-    // --- 2. RUN ALL OTHER MIGRATIONS (inside a transaction) ---
-    // This makes the setup atomic. If one migration fails, all fail.
-    $pdo->beginTransaction();
-    try {
-        
-        $pdo->exec("CREATE TABLE IF NOT EXISTS students (id SERIAL PRIMARY KEY, student_id_text VARCHAR(20) UNIQUE);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, first_name VARCHAR(100), surname VARCHAR(100), email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, role VARCHAR(20) NOT NULL DEFAULT 'student');");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS semesters (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS classes (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, semester_id INT);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS subjects (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, subject_code VARCHAR(20) UNIQUE NOT NULL);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS subject_allocation (id SERIAL PRIMARY KEY, staff_id INT NOT NULL, subject_id INT NOT NULL, UNIQUE(staff_id, subject_id));");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS question_papers (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, content TEXT);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS test_allocation (id SERIAL PRIMARY KEY, class_id INT NOT NULL, qp_id INT NOT NULL, UNIQUE(class_id, qp_id));");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS attendance (id SERIAL PRIMARY KEY, student_id INT, status VARCHAR(20));");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS ia_results (id SERIAL PRIMARY KEY, student_id INT, marks INT);");
-        $pdo->exec("CREATE TABLE IF NOT EXISTS daily_attendance (id SERIAL PRIMARY KEY, student_id INT, date DATE);");
+    // --- 2. CREATE ALL TABLES (IF THEY DON'T EXIST) ---
+    $pdo->exec("CREATE TABLE IF NOT EXISTS students (id SERIAL PRIMARY KEY, student_id_text VARCHAR(20) UNIQUE);");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, first_name VARCHAR(100), surname VARCHAR(100), email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, role VARCHAR(20) NOT NULL DEFAULT 'student');");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS semesters (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE);");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS classes (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, semester_id INT);");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS subjects (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, subject_code VARCHAR(20) UNIQUE NOT NULL);");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS subject_allocation (id SERIAL PRIMARY KEY, staff_id INT NOT NULL, subject_id INT NOT NULL, UNIQUE(staff_id, subject_id));");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS question_papers (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, content TEXT);");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS test_allocation (id SERIAL PRIMARY KEY, class_id INT NOT NULL, qp_id INT NOT NULL, UNIQUE(class_id, qp_id));");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS attendance (id SERIAL PRIMARY KEY, student_id INT, status VARCHAR(20));");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ia_results (id SERIAL PRIMARY KEY, student_id INT, marks INT);");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS daily_attendance (id SERIAL PRIMARY KEY, student_id INT, date DATE);");
 
-        // Add all missing columns to the 'students' table
-        run_migration($pdo, 'add_students_columns_batch_1', "
-            ALTER TABLE students
-            ADD COLUMN IF NOT EXISTS usn VARCHAR(20) UNIQUE,
-            ADD COLUMN IF NOT EXISTS student_name VARCHAR(255),
-            ADD COLUMN IF NOT EXISTS dob DATE,
-            ADD COLUMN IF NOT EXISTS father_name VARCHAR(255),
-            ADD COLUMN IF NOT EXISTS mother_name VARCHAR(255),
-            ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(20),
-            ADD COLUMN IF NOT EXISTS parent_mobile_number VARCHAR(20),
-            ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE,
-            ADD COLUMN IF NOT EXISTS password VARCHAR(255),
-            ADD COLUMN IF NOT EXISTS permanent_address TEXT,
-            ADD COLUMN IF NOT EXISTS previous_college VARCHAR(255),
-            ADD COLUMN IF NOT EXISTS previous_combination VARCHAR(50),
-            ADD COLUMN IF NOT EXISTS category VARCHAR(50),
-            ADD COLUMN IF NOT EXISTS sub_caste VARCHAR(100),
-            ADD COLUMN IF NOT EXISTS admission_through VARCHAR(50),
-            ADD COLUMN IF NOT EXISTS cet_number VARCHAR(100),
-            ADD COLUMN IF NOT EXISTS seat_allotted VARCHAR(100),
-            ADD COLUMN IF NOT EXISTS allotted_branch_kea VARCHAR(100),
-            ADD COLUMN IF NOT EXISTS allotted_branch_management VARCHAR(100),
-            ADD COLUMN IF NOT EXISTS cet_rank VARCHAR(50),
-            ADD COLUMN IF NOT EXISTS photo_url TEXT,
-            ADD COLUMN IF NOT EXISTS marks_card_url TEXT,
-            ADD COLUMN IF NOT EXISTS aadhaar_front_url TEXT,
-            ADD COLUMN IF NOT EXISTS aadhaar_back_url TEXT,
-            ADD COLUMN IF NOT EXISTS caste_income_url TEXT,
-            ADD COLUMN IF NOT EXISTS submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ADD COLUMN IF NOT EXISTS class_id INT,
-            ADD COLUMN IF NOT EXISTS semester INT;
-        ");
+    // --- 3. RUN ALL "ALTER TABLE" MIGRATIONS ---
+    // Each of these will now run in its own safe transaction
+    
+    // Add all missing columns to the 'students' table
+    run_migration($pdo, 'add_students_columns_batch_1', "
+        ALTER TABLE students
+        ADD COLUMN IF NOT EXISTS usn VARCHAR(20) UNIQUE,
+        ADD COLUMN IF NOT EXISTS student_name VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS dob DATE,
+        ADD COLUMN IF NOT EXISTS father_name VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS mother_name VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS parent_mobile_number VARCHAR(20),
+        ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE,
+        ADD COLUMN IF NOT EXISTS password VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS permanent_address TEXT,
+        ADD COLUMN IF NOT EXISTS previous_college VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS previous_combination VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS category VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS sub_caste VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS admission_through VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS cet_number VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS seat_allotted VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS allotted_branch_kea VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS allotted_branch_management VARCHAR(100),
+        ADD COLUMN IF NOT EXISTS cet_rank VARCHAR(50),
+        ADD COLUMN IF NOT EXISTS photo_url TEXT,
+        ADD COLUMN IF NOT EXISTS marks_card_url TEXT,
+        ADD COLUMN IF NOT EXISTS aadhaar_front_url TEXT,
+        ADD COLUMN IF NOT EXISTS aadhaar_back_url TEXT,
+        ADD COLUMN IF NOT EXISTS caste_income_url TEXT,
+        ADD COLUMN IF NOT EXISTS submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS class_id INT,
+        ADD COLUMN IF NOT EXISTS semester INT;
+    ");
 
-        // Add columns to other tables
-        run_migration($pdo, 'add_classes_semester_id', "ALTER TABLE classes ADD COLUMN IF NOT EXISTS semester_id INT;");
-        run_migration($pdo, 'add_qp_subject_id', "ALTER TABLE question_papers ADD COLUMN IF NOT EXISTS subject_id INT;");
-        run_migration($pdo, 'add_subjects_semester_id', "ALTER TABLE subjects ADD COLUMN IF NOT EXISTS semester_id INT;"); 
-        
-        // Seed Data
-        run_migration($pdo, 'seed_semesters', "
-            INSERT INTO semesters (name) VALUES
-            ('Semester 1'), ('Semester 2'), ('Semester 3'), ('Semester 4'),
-            ('Semester 5'), ('Semester 6'), ('Semester 7'), ('Semester 8')
-            ON CONFLICT (name) DO NOTHING;
-        ");
-        
-        // Add constraints (These will now be caught and logged safely)
-        run_migration($pdo, 'add_constraint_students_email_unique', "ALTER TABLE students ADD CONSTRAINT students_email_unique UNIQUE (email);");
-        run_migration($pdo, 'add_constraint_students_usn_unique', "ALTER TABLE students ADD CONSTRAINT students_usn_unique UNIQUE (usn);");
-        
-        // Commit all changes
-        $pdo->commit();
-
-    } catch (PDOException $e) {
-        $pdo->rollBack(); // Roll back any failed migrations in this batch
-        die("Database migration failed: " . $e->getMessage());
-    }
+    // Add columns to other tables
+    run_migration($pdo, 'add_classes_semester_id', "ALTER TABLE classes ADD COLUMN IF NOT EXISTS semester_id INT;");
+    run_migration($pdo, 'add_qp_subject_id', "ALTER TABLE question_papers ADD COLUMN IF NOT EXISTS subject_id INT;");
+    run_migration($pdo, 'add_subjects_semester_id', "ALTER TABLE subjects ADD COLUMN IF NOT EXISTS semester_id INT;"); 
+    
+    // Seed Data
+    run_migration($pdo, 'seed_semesters', "
+        INSERT INTO semesters (name) VALUES
+        ('Semester 1'), ('Semester 2'), ('Semester 3'), ('Semester 4'),
+        ('Semester 5'), ('Semester 6'), ('Semester 7'), ('Semester 8')
+        ON CONFLICT (name) DO NOTHING;
+    ");
+    
+    // Add constraints (These will now be caught and logged safely)
+    run_migration($pdo, 'add_constraint_students_email_unique', "ALTER TABLE students ADD CONSTRAINT students_email_unique UNIQUE (email);");
+    run_migration($pdo, 'add_constraint_students_usn_unique', "ALTER TABLE students ADD CONSTRAINT students_usn_unique UNIQUE (usn);");
     
 } catch (PDOException $e) {
     die("Database connection failed: " . $e->getMessage());
