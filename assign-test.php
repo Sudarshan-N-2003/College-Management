@@ -34,7 +34,7 @@ try {
     $semesters = $sem_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Fetch subjects grouped by semester
-    $subjects_stmt = $pdo->query("SELECT id, name, semester_id FROM subjects ORDER BY name");
+    $subjects_stmt = $pdo->query("SELECT id, name, semester AS semester_id FROM subjects ORDER BY name");
     $subjects_by_semester = [];
     while ($subject = $subjects_stmt->fetch(PDO::FETCH_ASSOC)) {
         $subjects_by_semester[$subject['semester_id']][] = $subject;
