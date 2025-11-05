@@ -16,8 +16,9 @@ $message = ''; // For success/error messages
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $class_id = filter_input(INPUT_POST, 'class_id', FILTER_VALIDATE_INT);
     $qp_id = filter_input(INPUT_POST, 'qp_id', FILTER_VALIDATE_INT);
+    $semester_id = filter_input(INPUT_POST, 'semester_id', FILTER_VALIDATE_INT); // Get semester from form
 
-    if ($class_id && $qp_id) {
+    if ($class_id && $qp_id && $semester_id) {
         try {
             // PostgreSQL-compatible query to insert if not already exists
             $sql = "INSERT INTO test_allocation (class_id, qp_id) 
@@ -36,21 +37,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $message = "<p class='message error'>Database error: " . $e->getMessage() . "</p>";
         }
     } else {
-        $message = "<p class='message error'>Invalid input. Please select a class and a question paper.</p>";
+        $message = "<p class='message error'>Invalid input. Please select a semester, class, and question paper.</p>";
     }
 }
 
-// Fetch classes and question papers for the dropdowns
+// Fetch data for the dropdowns
 try {
-    $class_stmt = $pdo->query("SELECT id, name FROM classes ORDER BY name");
-    $classes = $class_stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Fetch all semesters
+    $sem_stmt = $pdo->query("SELECT id, name FROM semesters ORDER BY name");
+    $semesters = $sem_stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Fetch all classes and group them by semester_id
+    $class_stmt = $pdo->query("SELECT id, name, semester_id FROM classes ORDER BY name");
+    $classes_by_semester = [];
+    while ($class = $class_stmt->fetch(PDO::FETCH_ASSOC)) {
+        if (!isset($classes_by_semester[$class['semester_id']])) {
+            $classes_by_semester[$class['semester_id']] = [];
+        }
+        $classes_by_semester[$class['semester_id']][] = $class;
+    }
+
+    // Fetch all question papers
     $qp_stmt = $pdo->query("SELECT id, title FROM question_papers ORDER BY title");
     $question_papers = $qp_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
     die("Error fetching data: " . $e->getMessage());
 }
+
+// Pass the classes data to JavaScript
+$classes_json = json_encode($classes_by_semester);
 ?>
 
 <!DOCTYPE html>
@@ -70,6 +86,7 @@ try {
         form { display: flex; flex-direction: column; gap: 10px; }
         label { display: block; margin-bottom: 5px; font-weight: 600; }
         select { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid var(--cool-gray); background: rgba(43, 45, 66, 0.5); color: var(--antiflash-white); box-sizing: border-box; }
+        select:disabled { background: rgba(43, 45, 66, 0.2); color: var(--cool-gray); }
         button { padding: 12px 20px; border: none; border-radius: 5px; background-color: var(--fire-engine-red); color: var(--antiflash-white); font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1em; margin-top: 10px; }
         button:hover { background-color: var(--red-pantone); }
         .message { padding: 10px; border-radius: 5px; margin-bottom: 1em; text-align: center; font-weight: bold; }
@@ -84,14 +101,21 @@ try {
         <?php if (!empty($message)) echo $message; ?>
 
         <form action="assign-test.php" method="POST">
-            <label for="class_id">Select Class:</label>
-            <select name="class_id" id="class_id" required>
-                <option value="">-- Select a Class --</option>
-                <?php foreach ($classes as $class): ?>
-                    <option value="<?= htmlspecialchars($class['id']) ?>">
-                        <?= htmlspecialchars($class['name']) ?>
+            
+            <label for="semester_id">Select Semester:</label>
+            <select name="semester_id" id="semester_id" required>
+                <option value="">-- Select a Semester --</option>
+                <?php foreach ($semesters as $semester): ?>
+                    <option value="<?= htmlspecialchars($semester['id']) ?>">
+                        <?= htmlspecialchars($semester['name']) ?>
                     </option>
                 <?php endforeach; ?>
+            </select>
+
+            <label for="class_id">Select Class:</label>
+            <select name="class_id" id="class_id" required disabled>
+                <option value="">-- First Select a Semester --</option>
+                <!-- This will be populated by JavaScript -->
             </select>
 
             <label for="qp_id">Select Question Paper:</label>
@@ -107,5 +131,42 @@ try {
             <button type="submit">Assign Test</button>
         </form>
     </div>
+
+    <script>
+        // This JavaScript will filter the classes based on the selected semester
+        
+        // 1. Get the class data from PHP
+        const classesBySemester = <?= $classes_json ?>;
+
+        // 2. Get the dropdown elements
+        const semesterSelect = document.getElementById('semester_id');
+        const classSelect = document.getElementById('class_id');
+
+        // 3. Add an event listener to the semester dropdown
+        semesterSelect.addEventListener('change', function() {
+            const selectedSemesterId = this.value;
+            
+            // Clear the class dropdown
+            classSelect.innerHTML = '<option value="">-- Select a Class --</option>';
+            
+            // Check if a valid semester was chosen
+            if (selectedSemesterId && classesBySemester[selectedSemesterId]) {
+                // Enable the class dropdown
+                classSelect.disabled = false;
+                
+                // Populate the class dropdown with the correct classes
+                classesBySemester[selectedSemesterId].forEach(function(classItem) {
+                    const option = document.createElement('option');
+                    option.value = classItem.id;
+                    option.textContent = classItem.name;
+                    classSelect.appendChild(option);
+                });
+            } else {
+                // Disable the class dropdown if no semester is selected
+                classSelect.innerHTML = '<option value="">-- First Select a Semester --</option>';
+                classSelect.disabled = true;
+            }
+        });
+    </script>
 </body>
 </html>
