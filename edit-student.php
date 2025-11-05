@@ -1,15 +1,15 @@
 <?php
 session_start();
-include('db-config.php'); // PDO connection ($conn)
+include('db-config.php'); // Your PDO connection file
 
-// Restrict access to admin only
+// --- Check if admin is logged in ---
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: login.php");
     exit;
 }
 
-// Ensure valid student ID is provided
-if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
+// --- Check if ID provided ---
+if (!isset($_GET['id'])) {
     header("Location: view-students.php");
     exit;
 }
@@ -19,40 +19,44 @@ $error = '';
 $student = null;
 
 try {
-    // --- Handle update form submission ---
-    if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    // Ensure no aborted transaction from before
+    if ($conn->inTransaction()) {
+        $conn->rollBack();
+    }
+
+    // --- Handle Update ---
+    if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $usn = trim($_POST['usn']);
         $name = trim($_POST['name']);
         $email = trim($_POST['email']);
-        $semester = (int)$_POST['semester'];
 
-        // Basic validation
-        if ($usn === '' || $name === '' || $email === '') {
-            $error = "All fields are required.";
-        } else {
-            $update_sql = "UPDATE students SET usn = ?, student_name = ?, email = ?, semester = ? WHERE id = ?";
-            $update_stmt = $conn->prepare($update_sql);
+        // Begin safe transaction
+        $conn->beginTransaction();
 
-            if ($update_stmt->execute([$usn, $name, $email, $semester, $student_id])) {
-                header("Location: view-students.php?status=updated");
-                exit;
-            } else {
-                $error = "Error updating student details. Please try again.";
-            }
-        }
+        $update_sql = "UPDATE students SET usn = ?, name = ?, email = ? WHERE id = ?";
+        $stmt = $conn->prepare($update_sql);
+        $stmt->execute([$usn, $name, $email, $student_id]);
+
+        $conn->commit();
+
+        header("Location: view-students.php?status=updated");
+        exit;
     }
 
-    // --- Fetch existing student details ---
-    $stmt = $conn->prepare("SELECT id, usn, student_name AS name, email, semester FROM students WHERE id = ?");
+    // --- Fetch student details for form ---
+    $stmt = $conn->prepare("SELECT id, usn, name, email FROM students WHERE id = ?");
     $stmt->execute([$student_id]);
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$student) {
-        header("Location: view-students.php?error=notfound");
+        header("Location: view-students.php");
         exit;
     }
 
 } catch (PDOException $e) {
+    if ($conn->inTransaction()) {
+        $conn->rollBack();
+    }
     $error = "Database Error: " . htmlspecialchars($e->getMessage());
 }
 ?>
@@ -65,8 +69,8 @@ try {
     <title>Edit Student</title>
     <style>
         body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background-color: #eef2f7;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(135deg, #e3f2fd, #ffffff);
             margin: 0;
             padding: 0;
             display: flex;
@@ -75,65 +79,65 @@ try {
             min-height: 100vh;
         }
         .container {
-            background: #fff;
-            padding: 30px 40px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            background-color: #fff;
+            padding: 35px;
+            border-radius: 12px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.1);
             width: 90%;
             max-width: 480px;
         }
         h2 {
-            text-align: center;
             color: #333;
+            text-align: center;
             margin-bottom: 25px;
         }
-        form {
-            display: flex;
-            flex-direction: column;
-        }
         label {
-            font-weight: bold;
+            display: block;
             margin-top: 12px;
-            color: #444;
+            font-weight: bold;
+            color: #555;
         }
-        input, select {
-            margin-top: 6px;
+        input {
+            width: 100%;
             padding: 10px;
+            margin-top: 6px;
             border: 1px solid #ccc;
             border-radius: 6px;
             font-size: 15px;
+            box-sizing: border-box;
         }
         button {
-            margin-top: 20px;
+            margin-top: 22px;
             padding: 12px;
-            background-color: #28a745;
+            width: 100%;
+            background: #007bff;
             color: white;
             border: none;
             border-radius: 6px;
             font-size: 16px;
-            font-weight: 600;
+            font-weight: bold;
             cursor: pointer;
-            transition: background 0.3s ease;
+            transition: 0.3s;
         }
         button:hover {
-            background-color: #218838;
+            background: #0056b3;
         }
         .error {
-            background-color: #f8d7da;
-            color: #842029;
-            border: 1px solid #f5c2c7;
+            color: #b71c1c;
+            background: #ffebee;
+            border: 1px solid #ef9a9a;
             padding: 10px;
             border-radius: 6px;
-            margin-bottom: 10px;
             text-align: center;
+            margin-bottom: 10px;
         }
         .back-link {
             display: block;
-            text-align: center;
             margin-top: 15px;
+            text-align: center;
             color: #007bff;
             text-decoration: none;
-            font-weight: 500;
+            font-size: 14px;
         }
         .back-link:hover {
             text-decoration: underline;
@@ -141,39 +145,29 @@ try {
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Edit Student Details</h2>
+<div class="container">
+    <h2>Edit Student Details</h2>
 
-        <?php if ($error): ?>
-            <div class="error"><?= htmlspecialchars($error) ?></div>
-        <?php endif; ?>
+    <?php if (!empty($error)) echo "<p class='error'>$error</p>"; ?>
 
-        <?php if ($student): ?>
-            <form method="POST" action="edit-student.php?id=<?= $student_id ?>">
-                <label for="usn">USN:</label>
-                <input type="text" id="usn" name="usn" value="<?= htmlspecialchars($student['usn']) ?>" required>
+    <?php if ($student): ?>
+        <form action="edit-student.php?id=<?= htmlspecialchars($student_id) ?>" method="POST">
+            <label for="usn">USN:</label>
+            <input type="text" id="usn" name="usn" value="<?= htmlspecialchars($student['usn']) ?>" required>
 
-                <label for="name">Full Name:</label>
-                <input type="text" id="name" name="name" value="<?= htmlspecialchars($student['name']) ?>" required>
+            <label for="name">Full Name:</label>
+            <input type="text" id="name" name="name" value="<?= htmlspecialchars($student['name']) ?>" required>
 
-                <label for="email">Email:</label>
-                <input type="email" id="email" name="email" value="<?= htmlspecialchars($student['email']) ?>" required>
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" value="<?= htmlspecialchars($student['email']) ?>" required>
 
-                <label for="semester">Semester:</label>
-                <select name="semester" id="semester" required>
-                    <option value="">Select Semester</option>
-                    <?php for ($i = 1; $i <= 8; $i++): ?>
-                        <option value="<?= $i ?>" <?= ($student['semester'] == $i) ? 'selected' : '' ?>>Semester <?= $i ?></option>
-                    <?php endfor; ?>
-                </select>
+            <button type="submit">Update Details</button>
+        </form>
+    <?php else: ?>
+        <p>Could not find student details.</p>
+    <?php endif; ?>
 
-                <button type="submit">Update Student</button>
-            </form>
-        <?php else: ?>
-            <p>Student record not found.</p>
-        <?php endif; ?>
-
-        <a href="view-students.php" class="back-link">← Back to View Students</a>
-    </div>
+    <a href="view-students.php" class="back-link">← Back to View Students</a>
+</div>
 </body>
 </html>
