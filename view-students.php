@@ -150,11 +150,10 @@ $current_sl_no = $start_from + 1;
                     <?php foreach ($students as $student): ?>
                         <tr>
                             <td><?= $current_sl_no ?></td>
-                            <td><?= htmlspecialchars($student['usn']) ?></td>
-                            <td><?= htmlspecialchars($student['name']) ?></td>
-                            <td><?= htmlspecialchars($student['email']) ?></td>
-                            <td><?= htmlspecialchars($student['semester'] ?? '-') ?></td>
-                            <td>
+                            <td><?= htmlspecialchars($student['usn'] ?? '') ?></td>
+<td><?= htmlspecialchars($student['name'] ?? '') ?></td>
+<td><?= htmlspecialchars($student['email'] ?? '') ?></td>
+<td><?= htmlspecialchars((string)($student['semester'] ?? '-')) ?></td>
                                 <a href="edit-student.php?id=<?= $student['id'] ?>" class="action-btn edit-btn">Edit</a>
                                 <a href="?delete_student=<?= $student['id'] ?>" class="action-btn remove-btn" onclick="return confirm('Are you sure you want to delete this student?')">Remove</a>
                             </td>
