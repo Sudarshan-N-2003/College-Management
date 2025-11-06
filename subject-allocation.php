@@ -167,7 +167,7 @@ $available_subjects = $subject_stmt->fetchAll(PDO::FETCH_ASSOC);
 
             <button type="submit">Allocate Selected Subjects</button>
         </form>
-         <a href="admin_dashboard.php" class="back-link">Cancel</a>
+         <a href="admin-panel.php" class="back-link">Cancel</a>
     </div>
 </body>
 </html>
