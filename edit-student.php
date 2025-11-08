@@ -25,8 +25,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_student'])) {
     $name = trim(htmlspecialchars($_POST['student_name'], ENT_QUOTES, 'UTF-8'));
     $email = trim(htmlspecialchars($_POST['email'], ENT_QUOTES, 'UTF-8'));
     $semester = filter_input(INPUT_POST, 'semester', FILTER_VALIDATE_INT);
+    $section = trim(htmlspecialchars($_POST['section'], ENT_QUOTES, 'UTF-8')); // <-- NEW
 
-    if (empty($usn) || empty($name) || empty($email) || empty($semester)) {
+    if (empty($usn) || empty($name) || empty($email) || empty($semester) || empty($section)) { // <-- UPDATED
         $message = "<p class='message error'>All fields are required!</p>";
     } else {
         try {
@@ -42,8 +43,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_student'])) {
                             usn = :usn, 
                             student_name = :student_name, 
                             email = :email, 
-                            semester = :semester 
-                        WHERE id = :id";
+                            semester = :semester,
+                            section = :section
+                        WHERE id = :id"; // <-- UPDATED
                 
                 $update_stmt = $pdo->prepare($sql);
                 $update_stmt->execute([
@@ -51,6 +53,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_student'])) {
                     ':student_name' => $name,
                     ':email' => $email,
                     ':semester' => $semester,
+                    ':section' => $section, // <-- NEW
                     ':id' => $student_id
                 ]);
                 
@@ -64,10 +67,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_student'])) {
 
 // --- Fetch Student Details for the Form ---
 try {
-    // --- THIS IS THE FIX ---
-    // Changed `name` to `student_name`
-    $stmt = $pdo->prepare("SELECT id, usn, student_name, email, semester FROM students WHERE id = :id");
-    // --- END OF FIX ---
+    // Added 'section' to the query
+    $stmt = $pdo->prepare("SELECT id, usn, student_name, email, semester, section FROM students WHERE id = :id");
     
     $stmt->bindParam(':id', $student_id, PDO::PARAM_INT);
     $stmt->execute();
@@ -96,6 +97,8 @@ try {
         .container { max-width: 600px; margin: 20px auto; padding: 30px; background: rgba(141, 153, 174, 0.1); border-radius: 15px; border: 1px solid rgba(141, 153, 174, 0.2); }
         h2 { text-align: center; margin-bottom: 20px; }
         form { display: flex; flex-direction: column; gap: 10px; }
+        .form-row { display: flex; gap: 10px; }
+        .form-row .form-group { flex: 1; }
         label { display: block; margin-bottom: 5px; font-weight: 600; }
         input[type="text"], input[type="email"], select {
             width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid var(--cool-gray); background: rgba(43, 45, 66, 0.5); color: var(--antiflash-white); box-sizing: border-box;
@@ -124,13 +127,27 @@ try {
             <label for="email">Email:</label>
             <input type="email" id="email" name="email" value="<?= htmlspecialchars($student['email'] ?? '') ?>" required>
             
-            <label for="semester">Semester:</label>
-            <select id="semester" name="semester" required>
-                <option value="">-- Select Semester --</option>
-                <?php for ($i = 1; $i <= 8; $i++): ?>
-                    <option value="<?= $i ?>" <?= ($student['semester'] == $i) ? 'selected' : '' ?>>Semester <?= $i ?></option>
-                <?php endfor; ?>
-            </select>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="semester">Semester:</label>
+                    <select id="semester" name="semester" required>
+                        <option value="">-- Select --</option>
+                        <?php for ($i = 1; $i <= 8; $i++): ?>
+                            <option value="<?= $i ?>" <?= ($student['semester'] == $i) ? 'selected' : '' ?>>Semester <?= $i ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="section">Section:</label>
+                    <select id="section" name="section" required>
+                        <option value="">-- Select --</option>
+                        <option value="A" <?= ($student['section'] == 'A') ? 'selected' : '' ?>>A Section</option>
+                        <option value="B" <?= ($student['section'] == 'B') ? 'selected' : '' ?>>B Section</option>
+                        <option value="C" <?= ($student['section'] == 'C') ? 'selected' : '' ?>>C Section</option>
+                        <option value="D" <?= ($student['section'] == 'D') ? 'selected' : '' ?>>D Section</option>
+                    </select>
+                </div>
+            </div>
 
             <button type="submit" name="update_student">Update Details</button>
         </form>
