@@ -2,7 +2,7 @@
 /**
  * db.php
  * Database connection + automatic migrations
- * This version fixes the nested transaction error for PostgreSQL.
+ * This version contains the final fix for the subjects table.
  */
 
 // Get the database connection URL from Render's environment variables
@@ -40,9 +40,6 @@ function run_migration(PDO $pdo, string $migration_id, string $sql) {
 
     // Migration not run, try to execute it
     try {
-        // --- THIS IS THE FIX ---
-        // We run the migration in its OWN transaction.
-        // This isolates its failure and prevents it from aborting the main $pdo connection.
         $pdo->beginTransaction();
         $pdo->exec($sql);
         
@@ -82,15 +79,22 @@ try {
         run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );");
 
-    // --- 2. RUN ALL OTHER MIGRATIONS ---
-    // NO outer transaction here. Each run_migration() call is atomic.
+    // --- 2. RUN ALL MIGRATIONS ---
     
     // Create Tables
     run_migration($pdo, 'create_table_students', "CREATE TABLE IF NOT EXISTS students (id SERIAL PRIMARY KEY, student_id_text VARCHAR(20) UNIQUE);");
     run_migration($pdo, 'create_table_users', "CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, first_name VARCHAR(100), surname VARCHAR(100), email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, role VARCHAR(20) NOT NULL DEFAULT 'student');");
     run_migration($pdo, 'create_table_semesters', "CREATE TABLE IF NOT EXISTS semesters (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE);");
     run_migration($pdo, 'create_table_classes', "CREATE TABLE IF NOT EXISTS classes (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, semester_id INT);");
-    run_migration($pdo, 'create_table_subjects', "CREATE TABLE IF NOT EXISTS subjects (id SERIAL PRIMARY KEY, name VARCHAR(100) NOT NULL, subject_code VARCHAR(20) UNIQUE NOT NULL);");
+    
+    run_migration($pdo, 'create_table_subjects', "
+        CREATE TABLE IF NOT EXISTS subjects (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            subject_code VARCHAR(20) NOT NULL 
+        );
+    ");
+
     run_migration($pdo, 'create_table_subject_allocation', "CREATE TABLE IF NOT EXISTS subject_allocation (id SERIAL PRIMARY KEY, staff_id INT NOT NULL, subject_id INT NOT NULL, UNIQUE(staff_id, subject_id));");
     run_migration($pdo, 'create_table_question_papers', "CREATE TABLE IF NOT EXISTS question_papers (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, content TEXT);");
     run_migration($pdo, 'create_table_test_allocation', "CREATE TABLE IF NOT EXISTS test_allocation (id SERIAL PRIMARY KEY, class_id INT NOT NULL, qp_id INT NOT NULL, UNIQUE(class_id, qp_id));");
@@ -129,7 +133,8 @@ try {
         ADD COLUMN IF NOT EXISTS caste_income_url TEXT,
         ADD COLUMN IF NOT EXISTS submission_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         ADD COLUMN IF NOT EXISTS class_id INT,
-        ADD COLUMN IF NOT EXISTS semester INT;
+        ADD COLUMN IF NOT EXISTS semester INT,
+        ADD COLUMN IF NOT EXISTS section VARCHAR(10); -- <-- NEW COLUMN
     ");
 
     // Add columns to other tables
@@ -147,14 +152,12 @@ try {
         ON CONFLICT (name) DO NOTHING;
     ");
     
-    // Add constraints (These will now be caught and logged safely)
+    // Add constraints
     run_migration($pdo, 'add_constraint_students_email_unique', "ALTER TABLE students ADD CONSTRAINT students_email_unique UNIQUE (email);");
     run_migration($pdo, 'add_constraint_students_usn_unique', "ALTER TABLE students ADD CONSTRAINT students_usn_unique UNIQUE (usn);");
+    run_migration($pdo, 'add_constraint_subjects_subject_code_unique', "ALTER TABLE subjects ADD CONSTRAINT subjects_subject_code_key UNIQUE (subject_code);");
     
 } catch (PDOException $e) {
-    // --- THIS IS THE FIX ---
-    // Changed the "die" statement to use printf for safer string handling.
-    // This will resolve the "Unclosed '('" parse error.
-    die(sprintf("Database connection failed: %s", $e->getMessage()));
+    die("Database connection failed: " . $e->getMessage());
 }
 ?>
