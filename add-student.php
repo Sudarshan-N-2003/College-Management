@@ -1,90 +1,75 @@
 <?php
-session_start();
-require_once('db.php'); // this gives you $pdo (PostgreSQL PDO connection)
+// session_start(); // Enable if using sessions
+require_once('db.php'); // Use PDO connection
 
-// only admin can access
+// --- Security Check (Placeholder) ---
+/*
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: login.php");
     exit;
 }
+*/
 
-$message = '';
+$message = ''; // For success/error messages
 
-// ---------- HANDLE CSV UPLOAD ----------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['student_csv'])) {
-    $fileName = $_FILES['student_csv']['tmp_name'];
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Retrieve and sanitize form data
+    $usn = isset($_POST['usn']) ? trim(htmlspecialchars($_POST['usn'], ENT_QUOTES, 'UTF-8')) : '';
+    $name = isset($_POST['name']) ? trim(htmlspecialchars($_POST['name'], ENT_QUOTES, 'UTF-8')) : '';
+    $email = isset($_POST['email']) ? trim(htmlspecialchars($_POST['email'], ENT_QUOTES, 'UTF-8')) : '';
+    $dob = isset($_POST['dob']) ? trim(htmlspecialchars($_POST['dob'], ENT_QUOTES, 'UTF-8')) : '';
+    $address = isset($_POST['address']) ? trim(htmlspecialchars($_POST['address'], ENT_QUOTES, 'UTF-8')) : '';
+    $password_plain = isset($_POST['password']) ? trim($_POST['password']) : '';
+    $semester = isset($_POST['semester']) ? filter_input(INPUT_POST, 'semester', FILTER_VALIDATE_INT) : null;
+    $section = isset($_POST['section']) ? trim(htmlspecialchars($_POST['section'], ENT_QUOTES, 'UTF-8')) : ''; // <-- NEW
 
-    if ($_FILES['student_csv']['size'] > 0) {
-        $file = fopen($fileName, "r");
-        $stmt = $pdo->prepare("
-            INSERT INTO students (usn, student_name, email, password, dob, allotted_branch_management)
-            VALUES (:usn, :student_name, :email, :password, :dob, :branch)
-        ");
-
-        $rowCount = 0;
-        while (($data = fgetcsv($file, 1000, ",")) !== FALSE) {
-            if ($rowCount === 0) { // skip header if present
-                $rowCount++;
-                continue;
-            }
-            $usn = trim($data[0]);
-            $name = trim($data[1]);
-            $email = trim($data[2]);
-            $dob = !empty($data[3]) ? $data[3] : null;
-            $branch = trim($data[4]);
-            $password = password_hash($data[5], PASSWORD_DEFAULT);
-
-            if (!empty($usn) && !empty($name) && !empty($email)) {
-                $stmt->execute([
-                    ':usn' => $usn,
-                    ':student_name' => $name,
-                    ':email' => $email,
-                    ':password' => $password,
-                    ':dob' => $dob,
-                    ':branch' => $branch
-                ]);
-            }
-            $rowCount++;
-        }
-        fclose($file);
-        $message = "<p class='success-message'>✅ $rowCount students imported successfully!</p>";
+    // Basic Validation
+    if (empty($usn) || empty($name) || empty($email) || empty($dob) || empty($password_plain) || empty($semester) || empty($section)) { // <-- UPDATED
+        $message = "<p class='message error'>All fields are required!</p>";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+         $message = "<p class='message error'>Invalid email format!</p>";
     } else {
-        $message = "<p class='error-message'>❌ Please upload a valid CSV file.</p>";
-    }
-}
-
-// ---------- HANDLE MANUAL STUDENT ADD ----------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['usn'])) {
-    $usn       = trim($_POST['usn'] ?? '');
-    $name      = trim($_POST['name'] ?? '');
-    $email     = trim($_POST['email'] ?? '');
-    $dob       = $_POST['dob'] ?? null;
-    $address   = trim($_POST['address'] ?? '');
-    $branch    = trim($_POST['branch'] ?? '');
-    $semester  = (int)($_POST['semester'] ?? 1);
-    $password  = password_hash($_POST['password'] ?? '', PASSWORD_DEFAULT);
-
-    if ($usn && $name && $email) {
         try {
-            $stmt = $pdo->prepare("
-                INSERT INTO students (usn, student_name, email, password, dob, semester, allotted_branch_management)
-                VALUES (:usn, :name, :email, :password, :dob, :semester, :branch)
-            ");
-            $stmt->execute([
-                ':usn'      => $usn,
-                ':name'     => $name,
-                ':email'    => $email,
-                ':password' => $password,
-                ':dob'      => $dob,
-                ':semester' => $semester,
-                ':branch'   => $branch
-            ]);
-            $message = "<p class='success-message'>✅ Student added successfully!</p>";
+            // Check if USN or Email already exists using PDO
+            $check_stmt = $pdo->prepare("SELECT usn FROM students WHERE usn = :usn OR email = :email LIMIT 1");
+            $check_stmt->bindParam(':usn', $usn, PDO::PARAM_STR);
+            $check_stmt->bindParam(':email', $email, PDO::PARAM_STR);
+            $check_stmt->execute();
+
+            if ($check_stmt->fetch()) {
+                $message = "<p class='message error'>Error: USN or Email already exists!</p>";
+            } else {
+                // Hash the password
+                $password_hashed = password_hash($password_plain, PASSWORD_DEFAULT);
+
+                // Insert student into students table using PDO
+                $insert_stmt = $pdo->prepare(
+                    "INSERT INTO students (usn, student_name, email, dob, permanent_address, password, semester, section) 
+                     VALUES (:usn, :student_name, :email, :dob, :address, :password, :semester, :section)" // <-- UPDATED
+                );
+                
+                $insert_stmt->bindParam(':usn', $usn, PDO::PARAM_STR);
+                $insert_stmt->bindParam(':student_name', $name, PDO::PARAM_STR);
+                $insert_stmt->bindParam(':email', $email, PDO::PARAM_STR);
+                $insert_stmt->bindParam(':dob', $dob);
+                $insert_stmt->bindParam(':address', $address, PDO::PARAM_STR);
+                $insert_stmt->bindParam(':password', $password_hashed, PDO::PARAM_STR);
+                $insert_stmt->bindParam(':semester', $semester, PDO::PARAM_INT);
+                $insert_stmt->bindParam(':section', $section, PDO::PARAM_STR); // <-- NEW
+
+                if ($insert_stmt->execute()) {
+                    $message = "<p class='message success'>Student added successfully!</p>";
+                } else {
+                    $message = "<p class='message error'>Error adding student.</p>";
+                }
+            }
         } catch (PDOException $e) {
-            $message = "<p class='error-message'>❌ Database error: " . htmlspecialchars($e->getMessage()) . "</p>";
+            if ($e->getCode() == '23505') {
+                 $message = "<p class='message error'>Error: USN or Email already exists!</p>";
+            } else {
+                $message = "<p class='message error'>Database error: " . $e->getMessage() . "</p>";
+            }
         }
-    } else {
-        $message = "<p class='error-message'>❌ Please fill all required fields.</p>";
     }
 }
 ?>
@@ -92,73 +77,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['usn'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Add Student</title>
-<style>
-    body { font-family: Arial; background: #f4f7fc; }
-    .content { width: 85%; margin: 30px auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .navbar { background: #333; padding: 10px; text-align: right; }
-    .navbar a { color: white; text-decoration: none; margin: 0 10px; }
-    h2 { text-align: center; }
-    form { text-align: center; margin-top: 15px; }
-    input, select, textarea, button { width: 80%; max-width: 400px; padding: 10px; margin: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
-    button { background: #28a745; color: white; cursor: pointer; border: none; }
-    button:hover { background: #218838; }
-    .success-message { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; }
-    .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; }
-</style>
+    <meta charset="UTF-8">
+    <title>Add Student</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* Reusing styles from admin.php */
+        :root { --space-cadet: #2b2d42; --cool-gray: #8d99ae; --antiflash-white: #edf2f4; --red-pantone: #ef233c; --fire-engine-red: #d90429; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: var(--space-cadet); color: var(--antiflash-white); }
+        .back-link { display: block; max-width: 860px; margin: 0 auto 20px auto; text-align: right; font-weight: bold; color: var(--antiflash-white); text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+        .container { max-width: 600px; margin: 20px auto; padding: 30px; background: rgba(141, 153, 174, 0.1); border-radius: 15px; border: 1px solid rgba(141, 153, 174, 0.2); }
+        h2 { text-align: center; margin-bottom: 20px; }
+        form { display: flex; flex-direction: column; gap: 10px; }
+        .form-row { display: flex; gap: 10px; } /* For semester and section */
+        .form-row .form-group { flex: 1; } /* Each takes half the space */
+        label { display: block; margin-bottom: 5px; font-weight: 600; }
+        input[type="text"], input[type="email"], input[type="date"], input[type="password"], textarea, select {
+            width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid var(--cool-gray); background: rgba(43, 45, 66, 0.5); color: var(--antiflash-white); box-sizing: border-box;
+        }
+        textarea { resize: vertical; min-height: 80px; }
+        button { padding: 12px 20px; border: none; border-radius: 5px; background-color: var(--fire-engine-red); color: var(--antiflash-white); font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1em; margin-top: 10px; }
+        button:hover { background-color: var(--red-pantone); }
+        .message { padding: 10px; border-radius: 5px; margin-bottom: 1em; text-align: center; font-weight: bold; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
 </head>
 <body>
+    <a href="/admin" class="back-link">&laquo; Back to Admin Dashboard</a>
+    <div class="container">
+        <h2>Add New Student</h2>
+        <?php if (!empty($message)) echo $message; ?>
 
-<div class="navbar">
-    <a href="admin-panel.php">Back to Admin Panel</a>
-</div>
+        <form action="add-student.php" method="POST">
+            <label for="usn">USN:</label>
+            <input type="text" id="usn" name="usn" required>
 
-<div class="content">
-    <h2>Add Students</h2>
-    <?= $message ?>
+            <label for="name">Full Name:</label>
+            <input type="text" id="name" name="name" required>
 
-    <h3>📁 Upload CSV File</h3>
-    <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="student_csv" accept=".csv" required><br>
-        <button type="submit">Upload CSV</button>
-    </form>
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" required>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="semester">Semester:</label>
+                    <select id="semester" name="semester" required>
+                        <option value="">-- Select --</option>
+                        <?php for ($i = 1; $i <= 8; $i++): ?>
+                            <option value="<?= $i ?>">Semester <?= $i ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="section">Section:</label>
+                    <select id="section" name="section" required>
+                        <option value="">-- Select --</option>
+                        <option value="A">A Section</option>
+                        <option value="B">B Section</option>
+                        <option value="C">C Section</option>
+                        <option value="D">D Section</option>
+                    </select>
+                </div>
+            </div>
 
-    <hr>
+            <label for="dob">Date of Birth:</label>
+            <input type="date" id="dob" name="dob" required>
 
-    <h3>Manually Add a Student</h3>
-<form action="manual-add-student.php" method="POST">
-    <input type="text" name="usn" placeholder="USN" required>
-    <input type="text" name="name" placeholder="Full Name" required>
-    <input type="email" name="email" placeholder="Email" required>
-    <input type="date" name="dob" required>
-    <textarea name="address" placeholder="Address"></textarea>
+            <label for="address">Address:</label>
+            <textarea id="address" name="address"></textarea>
 
-    <!-- Branch Selection -->
-    <select name="branch" required>
-        <option value="">-- Select Branch --</option>
-        <option value="CSE">CSE</option>
-        <option value="ECE">ECE</option>
-        <option value="MECH">MECH</option>
-        <option value="CIVIL">CIVIL</option>
-    </select>
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password" required>
 
-    <!-- Semester Selection -->
-    <select name="semester" required>
-        <option value="">-- Select Semester --</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-    </select>
-
-    <input type="password" name="password" placeholder="Password" required>
-    <button type="submit" class="btn">Add Student</button>
-</form>
-</div>
+            <button type="submit">Add Student</button>
+        </form>
+    </div>
 </body>
 </html>
