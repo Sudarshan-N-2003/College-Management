@@ -4,7 +4,7 @@ FROM php:8.2-apache
 # Enable Apache's rewrite module
 RUN a2enmod rewrite
 
-# Copy the custom Apache configuration to allow .htaccess
+# Copy the custom Apache configuration
 COPY apache/000-default.conf /etc/apache2/sites-available/000-default.conf
 
 # Install system dependencies required for PHP extensions
@@ -32,8 +32,10 @@ WORKDIR /var/www/html
 COPY composer.json .
 RUN composer install
 
-# Copy the rest of the application source code
-COPY src/ .
+# --- THIS IS THE FIX ---
+# Instead of copying from 'src/', we copy from the current directory '.'
+COPY . .
+# --- END OF FIX ---
 
 # --- PERMISSIONS FIX ---
 
@@ -41,12 +43,9 @@ COPY src/ .
 RUN mkdir -p /var/www/sessions
 
 # 2. Change the owner of ALL files and folders to the Apache user
-# This includes /var/www/html (app code), /var/www/html/uploads, and /var/www/sessions
 RUN chown -R www-data:www-data /var/www/html
 RUN chown -R www-data:www-data /var/www/sessions
 
 # 3. Explicitly grant read/write permissions
 RUN chmod -R 755 /var/www/html
 RUN chmod -R 775 /var/www/sessions
-
-# --- END FIX ---
