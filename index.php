@@ -196,7 +196,7 @@ a:hover {
         <div class="buttons">
             <!-- Corrected links -->
             <a href="login.php" class="button">Staff Login</a>
-            <a href="student-corner.php" class="button">Student Corner</a>
+            <a href="student-login.php" class="button">Student Corner</a>
         </div>
     </div>
 
@@ -211,4 +211,5 @@ a:hover {
     </script>
 </body>
 </html>
+
 
