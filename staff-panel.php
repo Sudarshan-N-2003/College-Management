@@ -95,7 +95,7 @@ try {
         <a href="correct-test.php">Correct Tests</a>
         <!-- Add links relevant for staff as features are built -->
         <!-- <a href="view-timetable.php">View Timetables</a> -->
-        <a href="enter-attendance.php">Enter Attendance</a>
+        <a href="enter-attendance-daily.php">Enter Attendance</a>
        <!--  <a href="enter-results.php">Enter IA Marks</a> -->
         <a href="logout.php">Logout</a>
     </div>
