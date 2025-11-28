@@ -1,73 +1,63 @@
 <?php
 // 1. SESSION CONFIG
-// Ensure this matches your other files
-ini_set('session.cookie_secure', '0');
-ini_set('session.cookie_httponly', '1');
-ini_set('session.use_only_cookies', '1');
-ini_set('session.gc_maxlifetime', 3600);
+require_once 'session_config.php'; 
 
 session_start();
+// Enable error reporting
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
 require_once 'db.php'; // PDO Connection
 
-echo "<div style='padding:20px; font-family:sans-serif; background:#333; color:white;'>";
-echo "<h2>🕵️ Session Debugger</h2>";
+// -------------------------------------------------------------------------
+// 2. SMART AUTHORIZATION (Handles BOTH Login Types)
+// -------------------------------------------------------------------------
+$student_id = null;
 
-// -------------------------------------------------------------------------
-// CHECK 1: Is Session Active?
-// -------------------------------------------------------------------------
-echo "<strong>1. Checking User ID:</strong> ";
+// CASE A: Logged in via New System (user_id + role)
 if (isset($_SESSION['user_id'])) {
-    echo "<span style='color:#4ade80'>OK (ID: " . $_SESSION['user_id'] . ")</span><br>";
-} else {
-    echo "<span style='color:#f87171'>FAIL (Session Empty)</span><br>";
-    echo "<pre>"; print_r($_SESSION); echo "</pre>";
-    echo "<p>❌ You are not logged in. <a href='student-login.php' style='color:#60a5fa'>Go to Login</a></p></div>";
+    $role = strtolower($_SESSION['role'] ?? '');
+    if ($role !== 'student') {
+        die("Access Denied: Students only. <a href='logout.php'>Logout</a>");
+    }
+    
+    // Resolve User ID -> Student ID
+    try {
+        $stmt = $pdo->prepare("SELECT email FROM users WHERE id = :id");
+        $stmt->execute(['id' => $_SESSION['user_id']]);
+        $email = $stmt->fetchColumn();
+        
+        if ($email) {
+            $stmt = $pdo->prepare("SELECT id FROM students WHERE email = :email");
+            $stmt->execute(['email' => $email]);
+            $student_id = $stmt->fetchColumn();
+        }
+    } catch (Exception $e) { /* Ignore */ }
+} 
+// CASE B: Logged in via Old System (student_id directly)
+elseif (isset($_SESSION['student_id'])) {
+    $student_id = $_SESSION['student_id'];
+} 
+// CASE C: Not Logged In
+else {
+    header("Location: student-login.php");
     exit;
 }
 
-// -------------------------------------------------------------------------
-// CHECK 2: Is Role Correct?
-// -------------------------------------------------------------------------
-echo "<strong>2. Checking Role:</strong> ";
-$role = strtolower($_SESSION['role'] ?? '');
-echo "Current Role: '<strong>$role</strong>' ... ";
-
-if ($role === 'student') {
-    echo "<span style='color:#4ade80'>OK</span><br>";
-} else {
-    echo "<span style='color:#f87171'>FAIL</span><br>";
-    echo "<p>❌ Access Denied. Required role: 'student'. Your role is: '$role'.</p></div>";
-    exit;
+// Final Check
+if (empty($student_id)) {
+    die("<div style='padding:20px; color:red; text-align:center;'>
+            <h2>❌ Student ID Not Found</h2>
+            <p>We verified your login, but could not find your academic record.</p>
+            <a href='logout.php'>Logout and Try Again</a>
+         </div>");
 }
 
-echo "<hr style='border-color:#555'><h3>✅ Authentication Passed. Loading Data...</h3></div>";
-
 // -------------------------------------------------------------------------
-// DATA FETCHING (Normal Logic)
+// 3. FETCH RESULTS
 // -------------------------------------------------------------------------
-$user_id = $_SESSION['user_id'];
 $results = [];
-
 try {
-    // A. Resolve User -> Student
-    $stmt_user = $pdo->prepare("SELECT email FROM users WHERE id = :id");
-    $stmt_user->execute(['id' => $user_id]);
-    $user_email = $stmt_user->fetchColumn();
-
-    if ($user_email) {
-        $stmt_stu = $pdo->prepare("SELECT id FROM students WHERE email = :email");
-        $stmt_stu->execute(['email' => $user_email]);
-        $student_id = $stmt_stu->fetchColumn();
-    }
-
-    if (empty($student_id)) {
-        die("<div style='padding:20px; color:red; background:#fee2e2;'><strong>Error:</strong> Student Profile not found for email: $user_email</div>");
-    }
-
-    // B. Fetch Results
     $sql = "
         SELECT 
             COALESCE(s.name, 'General') AS subject_name,
@@ -87,47 +77,67 @@ try {
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    die("<div style='padding:20px; color:red;'>Database Error: " . htmlspecialchars($e->getMessage()) . "</div>");
+    die("Database Error: " . htmlspecialchars($e->getMessage()));
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>IA Results (Debug)</title>
+    <title>IA Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; background: #f4f7f6; padding: 20px; }
-        .container { max-width: 800px; margin: 20px auto; background: white; padding: 30px; border-radius: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background: #007bff; color: white; }
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; margin: 0; padding: 40px 20px; color: #334155; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        h2 { text-align: center; margin-bottom: 30px; color: #0f172a; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; display: inline-block; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #f8fafc; color: #64748b; padding: 15px; text-align: left; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 15px; border-bottom: 1px solid #e2e8f0; font-size: 0.95rem; }
+        
+        .score-badge { background: #dcfce7; color: #166534; padding: 5px 10px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
+        .back-link { display: inline-block; margin-top: 30px; text-decoration: none; color: #64748b; font-weight: 500; }
+        .back-link:hover { color: #3b82f6; }
+        .no-records { text-align: center; padding: 40px; color: #94a3b8; font-style: italic; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2 style="text-align:center">🏆 Results</h2>
+    <div class="container">
+        <div style="text-align:center"><h2>🏆 Internal Assessment Results</h2></div>
 
-    <?php if (empty($results)): ?>
-        <p style="text-align:center; color:#777;">No results found.</p>
-    <?php else: ?>
-        <table>
-            <thead><tr><th>Subject</th><th>Test</th><th>Score</th></tr></thead>
-            <tbody>
-                <?php foreach ($results as $r): ?>
+        <?php if (empty($results)): ?>
+            <div class="no-records">You haven't completed any tests yet.</div>
+        <?php else: ?>
+            <table>
+                <thead>
                     <tr>
-                        <td><?= htmlspecialchars($r['subject_name']) ?></td>
-                        <td><?= htmlspecialchars($r['test_name']) ?></td>
-                        <td><strong><?= htmlspecialchars($r['marks']) ?></strong> / <?= htmlspecialchars($r['max_marks']) ?></td>
+                        <th>Subject</th>
+                        <th>Test Name</th>
+                        <th>Score</th>
+                        <th>Date</th>
                     </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    <?php endif; ?>
-    
-    <center style="margin-top:20px;"><a href="student-dashboard.php">Back to Dashboard</a></center>
-</div>
+                </thead>
+                <tbody>
+                    <?php foreach ($results as $row): ?>
+                        <tr>
+                            <td style="font-weight:500; color:#0f172a;"><?= htmlspecialchars($row['subject_name']) ?></td>
+                            <td><?= htmlspecialchars($row['test_name']) ?></td>
+                            <td>
+                                <span class="score-badge"><?= htmlspecialchars($row['marks']) ?> / <?= htmlspecialchars($row['max_marks']) ?></span>
+                            </td>
+                            <td><?= date('M d, Y', strtotime($row['created_at'])) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+
+        <div style="text-align:center;">
+            <a href="student-dashboard.php" class="back-link">&laquo; Back to Dashboard</a>
+        </div>
+    </div>
 
 </body>
 </html>
