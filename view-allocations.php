@@ -2,12 +2,18 @@
 session_start();
 require_once('db.php'); // Use our PDO connection ($pdo)
 
-// ... (Security Check) ...
+// Optional: Security Check
+/*
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+    header("Location: login.php");
+    exit;
+}
+*/
 
 try {
     /* --------------------------------------------
        DELETE ALLOCATION
-    -------------------------------------------- */
+     -------------------------------------------- */
     if (isset($_GET['delete_id'])) {
         $allocation_id = intval($_GET['delete_id']);
         
@@ -19,10 +25,9 @@ try {
     }
 
     /* --------------------------------------------
-       FETCH ALL ALLOCATIONS
-    -------------------------------------------- */
-    // --- UPDATED QUERY ---
-    // Now joins the 'classes' table as well
+       FETCH ALL ALLOCATIONS (FIXED QUERY)
+     -------------------------------------------- */
+    // Use LEFT JOIN so rows aren't hidden if a Class or Staff is deleted/missing
     $alloc_stmt = $pdo->query("
         SELECT 
             sa.id, 
@@ -30,17 +35,18 @@ try {
             u.surname, 
             s.subject_code, 
             s.name as subject_name,
-            c.name as class_name
+            c.name as class_name,
+            sa.section
         FROM 
             subject_allocation sa
-        JOIN 
+        LEFT JOIN 
             users u ON sa.staff_id = u.id
-        JOIN 
+        LEFT JOIN 
             subjects s ON sa.subject_id = s.id
-        JOIN
+        LEFT JOIN
             classes c ON sa.class_id = c.id
         ORDER BY 
-            u.first_name, s.subject_code, c.name
+            u.first_name, s.subject_code
     ");
     $allocations = $alloc_stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -57,7 +63,6 @@ $current_sl_no = 1;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>View Subject Allocations</title>
     <style>
-        /* ... (styles remain the same) ... */
         :root { --space-cadet: #2b2d42; --cool-gray: #8d99ae; --antiflash-white: #edf2f4; --red-pantone: #ef233c; --fire-engine-red: #d90429; }
         body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: var(--space-cadet); color: var(--antiflash-white); }
         .navbar { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto 20px auto; padding: 10px 20px; background: rgba(141, 153, 174, 0.1); border-radius: 10px; }
@@ -78,8 +83,8 @@ $current_sl_no = 1;
     <div class="navbar">
         <h2>Subject Allocations</h2>
         <div class="navbar-links">
-            <a href="/admin">Back to Dashboard</a>
-            <a href="/logout.php">Logout</a>
+            <a href="admin-panel.php">Back to Dashboard</a>
+            <a href="logout.php">Logout</a>
         </div>
     </div>
 
@@ -91,7 +96,7 @@ $current_sl_no = 1;
                     <th>Staff Name</th>
                     <th>Subject Code</th>
                     <th>Subject Name</th>
-                    <th>Class / Section</th> <!-- NEW COLUMN -->
+                    <th>Class / Section</th>
                     <th>Action</th>
                 </tr>
             </thead>
@@ -104,10 +109,16 @@ $current_sl_no = 1;
                     <?php foreach ($allocations as $alloc): ?>
                         <tr>
                             <td><?= $current_sl_no++ ?></td>
-                            <td><?= htmlspecialchars($alloc['first_name'] . ' ' . $alloc['surname']) ?></td>
-                            <td><?= htmlspecialchars($alloc['subject_code']) ?></td>
-                            <td><?= htmlspecialchars($alloc['subject_name']) ?></td>
-                            <td><?= htmlspecialchars($alloc['class_name']) ?></td> <!-- NEW COLUMN -->
+                            <td><?= htmlspecialchars(($alloc['first_name'] ?? '') . ' ' . ($alloc['surname'] ?? '')) ?></td>
+                            <td><?= htmlspecialchars($alloc['subject_code'] ?? '') ?></td>
+                            <td><?= htmlspecialchars($alloc['subject_name'] ?? '') ?></td>
+                            <td>
+                                <?php 
+                                    // Logic: Show Class Name if available, else show Section, else show '-'
+                                    $displayClass = $alloc['class_name'] ?? $alloc['section'] ?? '-';
+                                    echo htmlspecialchars($displayClass); 
+                                ?>
+                            </td>
                             <td>
                                 <a href="?delete_id=<?= $alloc['id'] ?>" class="action-btn remove-btn" onclick="return confirm('Are you sure you want to remove this allocation?')">Remove</a>
                             </td>
