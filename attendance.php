@@ -1,6 +1,5 @@
 <?php
-// 1. INCLUDE SESSION CONFIG (CRITICAL FIX)
-// This must be the very first line to match the cookie settings from login.php
+// 1. INCLUDE SESSION CONFIG
 require_once 'session_config.php';
 
 session_start();
@@ -10,42 +9,61 @@ require_once 'db.php'; // PDO Connection
 $allowed_roles = ['admin', 'staff', 'hod', 'principal'];
 $role = strtolower($_SESSION['role'] ?? '');
 
-// Debug: If session is missing, show error instead of redirecting loop
 if (!isset($_SESSION['user_id'])) {
-    die("<div style='padding:20px; text-align:center; color:#721c24; background:#f8d7da;'>
-            <h2>⚠️ Session Lost</h2>
-            <p>The system cannot find your login session.</p>
-            <a href='login.php' style='background:#333; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Go to Login</a>
-         </div>");
+    header("Location: login.php");
+    exit;
 }
 
-// If logged in as Student, redirect to Student Dashboard
 if ($role === 'student') {
     header("Location: student-dashboard.php");
     exit;
 }
 
-// If logged in but wrong role
 if (!in_array($role, $allowed_roles)) {
-    die("<div style='padding:20px; text-align:center;'>
-            <h2>Access Denied</h2>
-            <p>You are logged in as <strong>" . htmlspecialchars($role) . "</strong>.</p>
-            <p>This page is for Staff only.</p>
-            <a href='logout.php'>Logout</a>
-         </div>");
+    die("Access Denied: Staff only. <a href='logout.php'>Logout</a>");
 }
 
+// -------------------------------------------------------------------------
+// 3. SELF-HEALING: Ensure Attendance Table Exists & Has Columns
+// -------------------------------------------------------------------------
+try {
+    // Ensure table exists
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS attendance (
+            id SERIAL PRIMARY KEY,
+            student_id INT NOT NULL,
+            subject_id INT NOT NULL,
+            attendance_date DATE NOT NULL,
+            status VARCHAR(10) DEFAULT 'present',
+            marked_by INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id, subject_id, attendance_date)
+        );
+    ");
+
+    // Ensure columns exist (Prevent 'Undefined column' errors)
+    try { $pdo->exec("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'present'"); } catch(Exception $e){}
+    try { $pdo->exec("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS subject_id INT"); } catch(Exception $e){}
+    try { $pdo->exec("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS attendance_date DATE"); } catch(Exception $e){}
+    try { $pdo->exec("ALTER TABLE attendance ADD COLUMN IF NOT EXISTS marked_by INT"); } catch(Exception $e){}
+
+} catch (PDOException $e) {
+    die("Database Repair Failed: " . $e->getMessage());
+}
+
+// -------------------------------------------------------------------------
+// 4. FETCH DATA
+// -------------------------------------------------------------------------
 $message = '';
 $attendance_records = [];
 $selected_date = $_GET['date'] ?? date('Y-m-d');
 $selected_subject = $_GET['subject_id'] ?? '';
 
-// 3. Fetch Data
 try {
     // Fetch Subjects
     $subjects = $pdo->query("SELECT id, name FROM subjects ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
     
-    // Fetch Attendance Records if filter selected
+    // Fetch Attendance Records
     if ($selected_subject) {
         $sql = "
             SELECT 
@@ -131,7 +149,6 @@ try {
                 <tbody>
                     <?php foreach ($attendance_records as $row): ?>
                         <tr>
-                            <!-- Using ?? '' to safely handle null values -->
                             <td><?= htmlspecialchars($row['student_name'] ?? 'Unknown') ?></td>
                             <td><?= htmlspecialchars($row['usn'] ?? '-') ?></td>
                             <td>
@@ -150,7 +167,7 @@ try {
         <?php endif; ?>
     <?php endif; ?>
     
-    <div style="text-align:center; margin-top:20px;">
+    <div style="text-align:center; margin-top:30px;">
         <a href="enter-attendance-daily.php" class="btn">📝 Enter New Attendance</a>
     </div>
     
