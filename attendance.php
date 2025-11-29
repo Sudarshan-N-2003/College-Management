@@ -1,136 +1,138 @@
 <?php
 session_start();
-// 1. Include db-config.php directly (assuming attendance.php is in the root)
-include('db-config.php'); 
+require_once 'db.php'; // PDO Connection
 
-// Check if a student is logged in
-if (!isset($_SESSION['student_id'])) {
-    // Redirect to the correct student login page
-    header("Location: student/student-login.php"); // Assuming login is in student folder
+// 1. Authorization Check
+$allowed_roles = ['admin', 'staff', 'hod', 'principal'];
+$role = strtolower($_SESSION['role'] ?? '');
+
+if (!isset($_SESSION['user_id']) || !in_array($role, $allowed_roles)) {
+    header("Location: login.php");
     exit;
 }
 
-$student_id = $_SESSION['student_id'];
-$attendance_records = []; // Initialize an empty array to hold the results
+$message = '';
+$attendance_records = [];
+$selected_date = $_GET['date'] ?? date('Y-m-d');
+$selected_subject = $_GET['subject_id'] ?? '';
 
+// 2. Fetch Data for Filters
 try {
-    // Prepare and execute the database query using secure PDO methods
-    $stmt = $conn->prepare("SELECT subject, total_classes, attended_classes FROM attendance WHERE student_id = ? ORDER BY subject ASC");
-    $stmt->execute([$student_id]);
+    $subjects = $pdo->query("SELECT id, name FROM subjects ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
     
-    // Fetch all matching records into the array
-    $attendance_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // 3. Fetch Attendance Records if filter selected
+    if ($selected_subject) {
+        $sql = "
+            SELECT 
+                s.student_name,
+                s.usn,
+                a.status,
+                a.attendance_date
+            FROM attendance a
+            JOIN students s ON a.student_id = s.id
+            WHERE a.subject_id = :sub_id 
+            AND a.attendance_date = :date
+            ORDER BY s.student_name ASC
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(['sub_id' => $selected_subject, 'date' => $selected_date]);
+        $attendance_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 
 } catch (PDOException $e) {
-    // If the database query fails, stop the script and show a generic error
-    die("Error: Could not retrieve attendance data at this time. Please try again later.");
+    $message = "<div class='error'>Database Error: " . htmlspecialchars($e->getMessage()) . "</div>";
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <title>View Attendance</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Attendance</title>
     <style>
-        /* Consistent Styling */
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-            text-align: center; 
-            background: #f4f7f6; 
-            margin: 0;
-            padding: 20px;
-        }
-        .container { 
-            max-width: 800px; 
-            margin: 40px auto; 
-            background: white; 
-            padding: 25px; 
-            border-radius: 8px; 
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); 
-        }
-        h2 { 
-            color: #333; 
-            margin-bottom: 25px;
-        }
-        table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-top: 20px; 
-        }
-        th, td { 
-            border: 1px solid #ddd; 
-            padding: 12px; 
-            text-align: center; 
-        }
-        th { 
-            background: #007bff; 
-            color: white; 
-            font-weight: bold;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        .back-link { 
-            text-decoration: none; 
-            color: white; 
-            background: #6c757d; 
-            padding: 10px 20px; 
-            display: inline-block; 
-            border-radius: 5px; 
-            margin-top: 25px; 
-            transition: background-color 0.3s;
-        }
-        .back-link:hover { 
-            background: #5a6268; 
-        }
-        .no-records {
-            color: #777;
-            font-style: italic;
-            padding: 20px;
-        }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        
+        .filters { display: flex; gap: 15px; background: #eef2f3; padding: 20px; border-radius: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+        select, input { padding: 10px; border: 1px solid #ccc; border-radius: 5px; flex: 1; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }
+        th { background: #007bff; color: white; }
+        
+        .status-present { color: #28a745; font-weight: bold; }
+        .status-absent { color: #dc3545; font-weight: bold; }
+        .no-data { text-align: center; padding: 20px; color: #666; font-style: italic; }
+        .error { color: red; background: #fee; padding: 10px; margin-bottom: 10px; }
+        .nav-link { display: block; margin-top: 20px; text-align: center; color: #666; text-decoration: none; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>My Attendance Record</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Subject</th>
-                    <th>Total Classes</th>
-                    <th>Attended Classes</th>
-                    <th>Attendance %</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($attendance_records)): ?>
+
+<div class="container">
+    <h2>📋 View Attendance</h2>
+    <?= $message ?>
+
+    <!-- Filter Form -->
+    <form method="GET" class="filters">
+        <select name="subject_id" required>
+            <option value="">-- Select Subject --</option>
+            <?php foreach ($subjects as $sub): ?>
+                <option value="<?= htmlspecialchars($sub['id']) ?>" <?= $selected_subject == $sub['id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($sub['name']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <input type="date" name="date" value="<?= htmlspecialchars($selected_date) ?>" required>
+        <button type="submit">View</button>
+    </form>
+
+    <!-- Results Table -->
+    <?php if ($selected_subject): ?>
+        <?php if (count($attendance_records) > 0): ?>
+            <table>
+                <thead>
                     <tr>
-                        <td colspan="4" class="no-records">No attendance records have been uploaded for you yet.</td>
+                        <th>Student Name</th>
+                        <th>USN</th>
+                        <th>Status</th>
                     </tr>
-                <?php else: ?>
+                </thead>
+                <tbody>
                     <?php foreach ($attendance_records as $row): ?>
                         <tr>
-                            <td><?= htmlspecialchars($row['subject']) ?></td>
-                            <td><?= htmlspecialchars($row['total_classes']) ?></td>
-                            <td><?= htmlspecialchars($row['attended_classes']) ?></td>
+                            <!-- 
+                                FIX: The '??' operator prevents the error by checking for null.
+                                If Name or USN is null, it prints an empty string '' instead.
+                            -->
+                            <td><?= htmlspecialchars($row['student_name'] ?? 'Unknown') ?></td>
+                            <td><?= htmlspecialchars($row['usn'] ?? '-') ?></td>
                             <td>
-                                <?php
-                                // Avoid division by zero if total_classes is 0
-                                if (isset($row['total_classes']) && $row['total_classes'] > 0) {
-                                    echo round(($row['attended_classes'] / $row['total_classes']) * 100, 2) . '%';
-                                } else {
-                                    echo 'N/A';
-                                }
+                                <?php 
+                                    $status = strtolower($row['status'] ?? '');
+                                    $class = ($status === 'present') ? 'status-present' : 'status-absent';
+                                    echo "<span class='$class'>" . ucfirst($status) . "</span>";
                                 ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-        </table>
-        <!-- Link assumes student dashboard is in a 'student' subfolder -->
-        <a href="student/student-dashboard.php" class="back-link">Back to Dashboard</a> 
+                </tbody>
+            </table>
+        <?php else: ?>
+            <div class="no-data">No attendance found for this date/subject.</div>
+        <?php endif; ?>
+    <?php endif; ?>
+    
+    <div style="text-align:center; margin-top:20px;">
+        <a href="enter-attendance-daily.php" class="btn" style="text-decoration:none; background:#28a745;">📝 Enter New Attendance</a>
     </div>
+    
+    <a href="staff-panel.php" class="nav-link">&laquo; Back to Dashboard</a>
+</div>
+
 </body>
 </html>
