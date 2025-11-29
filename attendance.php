@@ -1,15 +1,51 @@
 <?php
+// 1. INCLUDE SESSION FIX (Crucial for Localhost)
+require_once 'session_config.php';
+
 session_start();
+// Enable error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 require_once 'db.php'; // PDO Connection
 
-// 1. Authorization Check
-$allowed_roles = ['admin', 'staff', 'hod', 'principal'];
-$role = strtolower($_SESSION['role'] ?? '');
+// =================================================================
+// DEBUGGING BLOCK (Removes Redirects)
+// =================================================================
+echo "<div style='background:#222; color:#fff; padding:20px; font-family:sans-serif; margin-bottom:20px; border-bottom: 5px solid red;'>";
+echo "<h2>🕵️ Authorization Debugger</h2>";
 
-if (!isset($_SESSION['user_id']) || !in_array($role, $allowed_roles)) {
-    header("Location: login.php");
+// 1. Check Session
+if (!isset($_SESSION['user_id'])) {
+    echo "<h3 style='color:#ff4444'>❌ FAIL: You are not logged in.</h3>";
+    echo "<p>Session 'user_id' is missing.</p>";
+    echo "<a href='login.php' style='color:#4dabf7; font-weight:bold;'>Go to Login</a>";
+    echo "</div>";
     exit;
 }
+echo "<p style='color:#00c851'>✅ Logged In (User ID: " . $_SESSION['user_id'] . ")</p>";
+
+// 2. Check Role
+$role = strtolower($_SESSION['role'] ?? 'none');
+echo "<p>Your Role: <strong>" . htmlspecialchars($role) . "</strong></p>";
+
+$allowed_roles = ['admin', 'staff', 'hod', 'principal'];
+
+if (!in_array($role, $allowed_roles)) {
+    echo "<h3 style='color:#ff4444'>❌ ACCESS DENIED</h3>";
+    echo "<p>This page is for <strong>Staff & Admins</strong> only.</p>";
+    if ($role === 'student') {
+        echo "<p>👉 <a href='student-dashboard.php' style='color:#4dabf7'>Go to Student Dashboard</a> to view your attendance.</p>";
+    }
+    echo "</div>";
+    exit;
+}
+
+echo "<p style='color:#00c851'>✅ Access Granted. Loading Page...</p>";
+echo "</div>"; 
+// =================================================================
+// END DEBUGGING
+// =================================================================
 
 $message = '';
 $attendance_records = [];
@@ -74,7 +110,7 @@ try {
 <body>
 
 <div class="container">
-    <h2>📋 View Attendance</h2>
+    <h2>📋 View Attendance Sheet</h2>
     <?= $message ?>
 
     <!-- Filter Form -->
@@ -105,10 +141,6 @@ try {
                 <tbody>
                     <?php foreach ($attendance_records as $row): ?>
                         <tr>
-                            <!-- 
-                                FIX: The '??' operator prevents the error by checking for null.
-                                If Name or USN is null, it prints an empty string '' instead.
-                            -->
                             <td><?= htmlspecialchars($row['student_name'] ?? 'Unknown') ?></td>
                             <td><?= htmlspecialchars($row['usn'] ?? '-') ?></td>
                             <td>
@@ -128,10 +160,10 @@ try {
     <?php endif; ?>
     
     <div style="text-align:center; margin-top:20px;">
-        <a href="enter-attendance-daily.php" class="btn" style="text-decoration:none; background:#28a745;">📝 Enter New Attendance</a>
+        <a href="enter-attendance-daily.php" class="btn" style="text-decoration:none; background:#28a745; color:white; padding:10px 15px; border-radius:5px;">📝 Enter New Attendance</a>
     </div>
     
-    <a href="staff-panel.php" class="nav-link">&laquo; Back to Dashboard</a>
+    <a href="admin-panel.php" class="nav-link">&laquo; Back to Dashboard</a>
 </div>
 
 </body>
