@@ -1,76 +1,74 @@
 <?php
 session_start();
-require_once __DIR__ . '/db.php';
-
-/* -------------------------------
-   AUTH CHECK
---------------------------------*/
 if (!isset($_SESSION['student_id'])) {
     header("Location: student-login.php");
     exit;
 }
 
+require_once 'db-config.php'; // PDO connection as $conn
+
 $student_id = $_SESSION['student_id'];
 
-/* -------------------------------
-   FETCH STUDENT DETAILS
-   (MATCHES YOUR NEON TABLE)
---------------------------------*/
-$studentStmt = $pdo->prepare("
-    SELECT 
-        usn,
-        student_name,
-        branch,
-        email
-    FROM students
-    WHERE id = ?
+/* ---------------- STUDENT INFO ---------------- */
+$stmt = $conn->prepare("
+    SELECT student_name, usn, branch 
+    FROM students 
+    WHERE id = :id
 ");
-$studentStmt->execute([$student_id]);
-$student = $studentStmt->fetch(PDO::FETCH_ASSOC);
+$stmt->execute([':id' => $student_id]);
+$student = $stmt->fetch();
 
 if (!$student) {
     die("Student not found");
 }
 
-/* -------------------------------
-   FETCH ATTENDANCE (SUBJECT-WISE)
---------------------------------*/
-$attendanceStmt = $pdo->prepare("
-    SELECT 
-        sub.name AS subject_name,
-        COUNT(a.id) AS total_classes,
-        SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS attended
+$name   = $student['student_name'] ?? 'Student';
+$usn    = $student['usn'] ?? 'N/A';
+$branch = $student['branch'] ?? 'Not Assigned';
+
+/* ---------------- ATTENDANCE ---------------- */
+$attStmt = $conn->prepare("
+    SELECT sub.name AS subject, a.total_classes, a.attended_classes
     FROM attendance a
     JOIN subjects sub ON sub.id = a.subject_id
-    WHERE a.student_id = ?
-    GROUP BY sub.name
-    ORDER BY sub.name
+    WHERE a.student_id = :sid
 ");
-$attendanceStmt->execute([$student_id]);
-$attendanceRows = $attendanceStmt->fetchAll(PDO::FETCH_ASSOC);
+$attStmt->execute([':sid' => $student_id]);
 
 $subjects = [];
 $percentages = [];
 
-foreach ($attendanceRows as $row) {
-    $subjects[] = $row['subject_name'];
+while ($row = $attStmt->fetch()) {
+    $subjects[] = $row['subject'];
     $percentages[] = $row['total_classes'] > 0
-        ? round(($row['attended'] / $row['total_classes']) * 100)
+        ? round(($row['attended_classes'] / $row['total_classes']) * 100)
         : 0;
 }
 
-/* -------------------------------
-   FETCH PRINCIPAL NOTIFICATIONS
---------------------------------*/
-$notifyStmt = $pdo->query("
-    SELECT message, created_at
-    FROM notifications
-    ORDER BY created_at DESC
-    LIMIT 5
+/* ---------------- RESULTS ---------------- */
+$resStmt = $conn->prepare("
+    SELECT subject, marks 
+    FROM ia_results 
+    WHERE student_id = :sid
 ");
-$notifications = $notifyStmt->fetchAll(PDO::FETCH_ASSOC);
-?>
+$resStmt->execute([':sid' => $student_id]);
+$results = $resStmt->fetchAll();
 
+/* ---------------- ASSIGNMENTS ---------------- */
+$assignments = [];
+try {
+    $asgStmt = $conn->prepare("
+        SELECT title, due_date 
+        FROM assignments 
+        WHERE branch = :branch
+        ORDER BY due_date ASC
+    ");
+    $asgStmt->execute([':branch' => $branch]);
+    $assignments = $asgStmt->fetchAll();
+} catch (Exception $e) {
+    // table may not exist – safe ignore
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -85,153 +83,174 @@ body {
     background: #f4f6f9;
 }
 
-/* NAVBAR */
-.navbar {
-    background: #003366;
-    padding: 12px;
-    display: flex;
-    justify-content: flex-end;
-    gap: 15px;
-}
-.navbar a {
-    color: #fff;
-    text-decoration: none;
-    font-weight: bold;
-}
-.navbar a:hover {
-    text-decoration: underline;
-}
-
-/* STUDENT INFO BAR */
-.student-bar {
-    background: #e3f2fd;
-    padding: 10px 20px;
-    font-size: 15px;
-}
-
-/* MAIN CARD */
-.container {
-    max-width: 1000px;
-    margin: 25px auto;
-    background: #fff;
-    padding: 25px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-h2 {
-    text-align: center;
-    color: #003366;
-}
-
-/* GRAPH */
-canvas {
-    max-width: 100%;
-    margin-top: 20px;
-}
-
-/* NOTIFICATIONS */
-.notifications {
-    margin-top: 30px;
-    padding: 15px;
-    background: #fff3cd;
-    border-left: 5px solid #ffc107;
-    border-radius: 6px;
-}
-.notifications h4 {
-    margin-top: 0;
-}
-.notifications ul {
-    margin: 0;
-    padding-left: 18px;
-}
-.notifications li {
-    margin-bottom: 6px;
-}
-
-/* FOOTER BUTTONS */
-.actions {
-    margin-top: 25px;
-    text-align: center;
-}
-.actions a {
-    display: inline-block;
-    padding: 10px 18px;
-    margin: 5px;
+/* HEADER */
+.header {
     background: #003366;
     color: white;
-    text-decoration: none;
-    border-radius: 5px;
+    padding: 15px;
+    text-align: center;
 }
-.actions a.logout {
-    background: #c62828;
+
+/* NAVBAR */
+.navbar {
+    display: flex;
+    justify-content: center;
+    background: #0056b3;
+}
+.navbar button {
+    background: none;
+    border: none;
+    color: white;
+    padding: 14px 25px;
+    font-size: 16px;
+    cursor: pointer;
+}
+.navbar button.active {
+    background: #003366;
+}
+
+/* STUDENT INFO */
+.student-info {
+    background: #e9f2ff;
+    padding: 12px 20px;
+    font-weight: bold;
+}
+
+/* CONTENT */
+.container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 20px;
+}
+
+.window {
+    display: none;
+}
+.window.active {
+    display: block;
+}
+
+/* CHART */
+.chart-wrapper {
+    max-width: 600px;
+    height: 320px;
+    margin: auto;
+}
+
+/* TABLE */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+th, td {
+    border: 1px solid #ccc;
+    padding: 10px;
+    text-align: center;
+}
+th {
+    background: #003366;
+    color: white;
+}
+
+/* ASSIGNMENTS */
+.assignment {
+    background: white;
+    padding: 15px;
+    border-left: 5px solid #007bff;
+    margin-bottom: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<!-- NAV -->
-<div class="navbar">
-    <a href="view-timetable.php">Timetable</a>
-    <a href="ia-results.php">IA Results</a>
-    <a href="stlogout.php">Logout</a>
+<div class="header">
+    <h2>Vijaya Vittala Institute of Technology</h2>
+    <p>Student Dashboard</p>
 </div>
 
-<!-- STUDENT INFO -->
-<div class="student-bar">
-    <strong>Name:</strong> <?= htmlspecialchars($student['student_name']) ?> |
-    <strong>USN:</strong> <?= htmlspecialchars($student['usn']) ?> |
-    <strong>Branch:</strong> <?= htmlspecialchars($student['branch']) ?>
+<div class="student-info">
+    Name: <?= htmlspecialchars($name) ?> |
+    USN: <?= htmlspecialchars($usn) ?> |
+    Branch: <?= htmlspecialchars($branch) ?>
+</div>
+
+<div class="navbar">
+    <button class="tab active" onclick="showTab('attendance')">Attendance</button>
+    <button class="tab" onclick="showTab('results')">Results</button>
+    <button class="tab" onclick="showTab('assignments')">Assignments</button>
 </div>
 
 <div class="container">
-    <h2>Attendance Overview</h2>
 
-    <canvas id="attendanceChart"></canvas>
-
-    <div class="notifications">
-        <h4>📢 Principal Notifications</h4>
-        <ul>
-            <?php if (empty($notifications)): ?>
-                <li>No notifications available</li>
-            <?php else: ?>
-                <?php foreach ($notifications as $n): ?>
-                    <li>
-                        <strong><?= date("d-m-Y", strtotime($n['created_at'])) ?>:</strong>
-                        <?= htmlspecialchars($n['message']) ?>
-                    </li>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </ul>
-    </div>
-
-    <div class="actions">
-        <a href="ia-results.php">View IA Results</a>
-        <a href="stlogout.php" class="logout">Logout</a>
+<!-- ATTENDANCE -->
+<div id="attendance" class="window active">
+    <h3>Attendance Overview</h3>
+    <div class="chart-wrapper">
+        <canvas id="attendanceChart"></canvas>
     </div>
 </div>
 
-<script>
-const ctx = document.getElementById('attendanceChart').getContext('2d');
+<!-- RESULTS -->
+<div id="results" class="window">
+    <h3>IA Results</h3>
+    <table>
+        <tr>
+            <th>Subject</th>
+            <th>Marks</th>
+        </tr>
+        <?php if ($results): foreach ($results as $r): ?>
+        <tr>
+            <td><?= htmlspecialchars($r['subject']) ?></td>
+            <td><?= htmlspecialchars($r['marks']) ?></td>
+        </tr>
+        <?php endforeach; else: ?>
+        <tr><td colspan="2">No results available</td></tr>
+        <?php endif; ?>
+    </table>
+</div>
 
-new Chart(ctx, {
+<!-- ASSIGNMENTS -->
+<div id="assignments" class="window">
+    <h3>Assignments</h3>
+    <?php if ($assignments): foreach ($assignments as $a): ?>
+        <div class="assignment">
+            <strong><?= htmlspecialchars($a['title']) ?></strong><br>
+            Due: <?= htmlspecialchars($a['due_date']) ?>
+        </div>
+    <?php endforeach; else: ?>
+        <p>No assignments available</p>
+    <?php endif; ?>
+</div>
+
+</div>
+
+<script>
+function showTab(id) {
+    document.querySelectorAll('.window').forEach(w => w.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+}
+
+/* CHART */
+new Chart(document.getElementById('attendanceChart'), {
     type: 'bar',
     data: {
         labels: <?= json_encode($subjects) ?>,
         datasets: [{
-            label: 'Attendance (%)',
             data: <?= json_encode($percentages) ?>,
-            backgroundColor: 'rgba(54, 162, 235, 0.7)'
+            backgroundColor: '#3498db',
+            barThickness: 40
         }]
     },
     options: {
+        maintainAspectRatio: false,
         scales: {
-            y: {
-                beginAtZero: true,
-                max: 100
-            }
-        }
+            y: { beginAtZero: true, max: 100 }
+        },
+        plugins: { legend: { display: false } }
     }
 });
 </script>
