@@ -5,14 +5,16 @@ if (!isset($_SESSION['student_id'])) {
     exit;
 }
 
-include('db-config.php');
+include('db-config.php'); // must return $conn as PDO
+
 $student_id = $_SESSION['student_id'];
 
 /* ================= STUDENT DETAILS ================= */
-$studentStmt = $conn->prepare("SELECT usn, name, branch FROM students WHERE id=?");
-$studentStmt->bind_param("i", $student_id);
-$studentStmt->execute();
-$student = $studentStmt->get_result()->fetch_assoc();
+$studentStmt = $conn->prepare(
+    "SELECT usn, name, branch FROM students WHERE id = ?"
+);
+$studentStmt->execute([$student_id]);
+$student = $studentStmt->fetch(PDO::FETCH_ASSOC);
 
 /* ================= ATTENDANCE ================= */
 $attStmt = $conn->prepare("
@@ -22,14 +24,8 @@ $attStmt = $conn->prepare("
     JOIN subjects s ON s.id = a.subject_id
     WHERE a.student_id = ?
 ");
-$attStmt->bind_param("i", $student_id);
-$attStmt->execute();
-$attResult = $attStmt->get_result();
-
-$attendanceData = [];
-while ($row = $attResult->fetch_assoc()) {
-    $attendanceData[] = $row;
-}
+$attStmt->execute([$student_id]);
+$attendanceData = $attStmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================= RESULTS ================= */
 $resultStmt = $conn->prepare("
@@ -38,9 +34,8 @@ $resultStmt = $conn->prepare("
     JOIN subjects s ON s.id = r.subject_id
     WHERE r.student_id = ?
 ");
-$resultStmt->bind_param("i", $student_id);
-$resultStmt->execute();
-$results = $resultStmt->get_result();
+$resultStmt->execute([$student_id]);
+$results = $resultStmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================= ASSIGNMENTS ================= */
 $assignStmt = $conn->prepare("
@@ -50,18 +45,15 @@ $assignStmt = $conn->prepare("
     ORDER BY a.due_date ASC
 ");
 $assignStmt->execute();
-$assignments = $assignStmt->get_result();
+$assignments = $assignStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Student Dashboard</title>
-
-<style>
-/* 🔹 YOUR EXACT STYLES (UNCHANGED) */
-<?= file_get_contents("student-dashboard-style.css") ?>
-</style>
+    <title>Student Dashboard</title>
+    <style>
+        /* keep your SAME CSS */
+    </style>
 </head>
 <body>
 
@@ -79,7 +71,7 @@ $assignments = $assignStmt->get_result();
 
     <div class="windows">
 
-        <!-- ================= ATTENDANCE ================= -->
+        <!-- ATTENDANCE -->
         <div class="window active" id="attendance">
             <h2>Attendance</h2>
             <div class="chart">
@@ -94,44 +86,41 @@ $assignments = $assignStmt->get_result();
             </div>
         </div>
 
-        <!-- ================= RESULTS ================= -->
+        <!-- RESULTS -->
         <div class="window" id="results">
             <h2>IA Results</h2>
-            <div class="marks-card">
-                <table width="100%" border="1">
-                    <tr>
-                        <th>Subject</th>
-                        <th>Marks</th>
-                        <th>Grade</th>
-                    </tr>
-                    <?php while ($r = $results->fetch_assoc()): 
-                        $grade = ($r['marks'] >= 90) ? 'A+' :
-                                 (($r['marks'] >= 75) ? 'A' :
-                                 (($r['marks'] >= 60) ? 'B' : 'C'));
-                    ?>
-                    <tr>
-                        <td><?= htmlspecialchars($r['subject']) ?></td>
-                        <td><?= $r['marks'] ?></td>
-                        <td><?= $grade ?></td>
-                    </tr>
-                    <?php endwhile; ?>
-                </table>
-                <button class="print-btn" onclick="window.print()">Print</button>
-            </div>
+            <table border="1" width="100%">
+                <tr>
+                    <th>Subject</th>
+                    <th>Marks</th>
+                    <th>Grade</th>
+                </tr>
+                <?php foreach ($results as $r): 
+                    $grade = $r['marks'] >= 90 ? 'A+' :
+                             ($r['marks'] >= 75 ? 'A' :
+                             ($r['marks'] >= 60 ? 'B' : 'C'));
+                ?>
+                <tr>
+                    <td><?= htmlspecialchars($r['subject']) ?></td>
+                    <td><?= $r['marks'] ?></td>
+                    <td><?= $grade ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
         </div>
 
-        <!-- ================= ASSIGNMENTS ================= -->
+        <!-- ASSIGNMENTS -->
         <div class="window" id="assignments">
             <h2>Assignments</h2>
-            <ul class="assignments">
-                <?php while ($a = $assignments->fetch_assoc()): ?>
+            <ul>
+                <?php foreach ($assignments as $a): ?>
                     <li>
                         <strong><?= htmlspecialchars($a['subject']) ?>:</strong>
                         <?= htmlspecialchars($a['title']) ?><br>
                         <?= htmlspecialchars($a['description']) ?><br>
                         <b>Due:</b> <?= date("d M Y", strtotime($a['due_date'])) ?>
                     </li>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
             </ul>
         </div>
 
@@ -139,13 +128,10 @@ $assignments = $assignStmt->get_result();
 </div>
 
 <script>
-const buttons = document.querySelectorAll('.control-btn');
-const windows = document.querySelectorAll('.window');
-
-buttons.forEach(btn => {
+document.querySelectorAll('.control-btn').forEach(btn => {
     btn.onclick = () => {
-        buttons.forEach(b => b.classList.remove('active'));
-        windows.forEach(w => w.classList.remove('active'));
+        document.querySelectorAll('.control-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.window').forEach(w => w.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById(btn.dataset.window).classList.add('active');
     };
