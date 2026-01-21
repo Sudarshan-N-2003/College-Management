@@ -33,11 +33,95 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <head>
 <title>Student Login</title>
 <style>
-body{font-family:Arial;background:#f4f6fa}
-.login{width:350px;margin:100px auto;padding:25px;background:#fff;border-radius:8px}
-input,button{width:100%;padding:10px;margin:8px 0}
-button{background:#003366;color:#fff;border:none}
-.error{color:red;text-align:center}
+/* Reset and base styles */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f6fa;
+    color: #333;
+    line-height: 1.6;
+    font-size: 16px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+/* Login container */
+.login {
+    width: 350px;
+    padding: 25px;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.login h2 {
+    margin-bottom: 20px;
+    font-size: 1.5rem;
+    color: #003366;
+}
+
+/* Form elements */
+input, button {
+    width: 100%;
+    padding: 10px;
+    margin: 8px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+input:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+}
+
+button {
+    background-color: #003366;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #002244;
+}
+
+/* Error message */
+.error {
+    color: red;
+    text-align: center;
+    margin-bottom: 15px;
+    font-weight: bold;
+}
+
+/* Responsive design */
+@media (max-width: 480px) {
+    .login {
+        width: 90%;
+        max-width: 350px;
+        padding: 20px;
+        margin: 20px auto;
+    }
+
+    .login h2 {
+        font-size: 1.3rem;
+    }
+
+    input, button {
+        padding: 12px;
+        font-size: 1rem;
+    }
+}
 </style>
 </head>
 <body>
@@ -52,3 +136,4 @@ button{background:#003366;color:#fff;border:none}
 </div>
 </body>
 </html>
+
