@@ -47,13 +47,19 @@ while ($row = $attStmt->fetch(PDO::FETCH_ASSOC)) {
 }
 
 /* ---------------- RESULTS ---------------- */
-$resStmt = $pdo->prepare("
-    SELECT s.name AS subject, r.marks
+$stmt = $pdo->prepare("
+    SELECT 
+        s.name AS subject,
+        r.marks,
+        r.max_marks
     FROM ia_results r
-    JOIN subjects s ON s.id = r.subject_id
+    JOIN question_papers qp ON qp.id = r.qp_id
+    JOIN subjects s ON s.id = qp.subject_id
     WHERE r.student_id = :sid
+    ORDER BY r.created_at DESC
 ");
-$resStmt->execute(['sid' => $student_id]);
+$stmt->execute(['sid' => $student_id]);
+
 $results = $resStmt->fetchAll(PDO::FETCH_ASSOC);
 
 
@@ -184,4 +190,5 @@ new Chart(document.getElementById('attChart'),{
 
 </body>
 </html>
+
 
