@@ -3,7 +3,7 @@ session_start();
 
 /* ================= DATABASE CONNECTION (NEON / RENDER) ================= */
 
-$database_url = getenv("DATABASE_URL");
+$database_url = getenv("postgresql://neondb_owner:npg_STKDhH8lomb7@ep-steep-grass-a4zzp7i4-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
 if (!$database_url) {
     die("DATABASE_URL not set");
 }
@@ -188,3 +188,4 @@ new Chart(ctx,{
 
 </body>
 </html>
+
