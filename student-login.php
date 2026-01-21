@@ -52,6 +52,24 @@ body {
     min-height: 100vh;
 }
 
+
+/* Background Video */
+.video-background {
+    position: fixed; /* Use fixed to ensure it covers the viewport */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+}
+
+#bg-video {
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+}
+
+    
 /* Login container */
 .login {
     width: 350px;
@@ -136,4 +154,5 @@ button:hover {
 </div>
 </body>
 </html>
+
 
