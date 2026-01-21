@@ -143,6 +143,14 @@ button:hover {
 </style>
 </head>
 <body>
+        <!-- Background Video -->
+    <div class="video-background">
+        <video autoplay muted loop id="bg-video">
+            <!-- Ensure this video file is in your root directory: /video/back.mp4 -->
+            <source src="video/back.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+    </div>
 <div class="login">
 <h2>Student Login</h2>
 <?php if($error): ?><p class="error"><?= htmlspecialchars($error) ?></p><?php endif; ?>
@@ -154,5 +162,6 @@ button:hover {
 </div>
 </body>
 </html>
+
 
 
