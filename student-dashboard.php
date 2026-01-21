@@ -1,99 +1,156 @@
 <?php
 session_start();
-
-// Check if student is logged in using student_id
 if (!isset($_SESSION['student_id'])) {
-    // Redirect to the correct student login page (adjust filename if needed)
-    header('Location: student-login.php'); 
+    header("Location: student-login.php");
     exit;
 }
 
-// Get email from session for display (ensure it's set during login)
-$student_email = $_SESSION['student_email'] ?? 'Student'; // Default to 'Student' if not set
+include('db-config.php');
+$student_id = $_SESSION['student_id'];
 
-// --- Optional: Fetch student name from DB ---
-// Uncomment and adapt if you want to display the name
-/*
-include('../db-config.php'); // Include DB connection
-$student_name = 'Student'; // Default name
-try {
-    $stmt = $conn->prepare("SELECT name FROM students WHERE id = ?");
-    $stmt->execute([$_SESSION['student_id']]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($result && !empty($result['name'])) {
-        $student_name = $result['name'];
-    }
-} catch (PDOException $e) {
-    // Log error or handle gracefully, don't stop the page
-    error_log("Error fetching student name: " . $e->getMessage());
+/* ================= STUDENT DETAILS ================= */
+$studentStmt = $conn->prepare("SELECT usn, name, branch FROM students WHERE id=?");
+$studentStmt->bind_param("i", $student_id);
+$studentStmt->execute();
+$student = $studentStmt->get_result()->fetch_assoc();
+
+/* ================= ATTENDANCE ================= */
+$attStmt = $conn->prepare("
+    SELECT s.name AS subject,
+           ROUND((a.attended_classes / a.total_classes) * 100) AS percentage
+    FROM attendance a
+    JOIN subjects s ON s.id = a.subject_id
+    WHERE a.student_id = ?
+");
+$attStmt->bind_param("i", $student_id);
+$attStmt->execute();
+$attResult = $attStmt->get_result();
+
+$attendanceData = [];
+while ($row = $attResult->fetch_assoc()) {
+    $attendanceData[] = $row;
 }
-$conn = null; // Close connection if opened
-*/
 
+/* ================= RESULTS ================= */
+$resultStmt = $conn->prepare("
+    SELECT s.name AS subject, r.marks
+    FROM ia_results r
+    JOIN subjects s ON s.id = r.subject_id
+    WHERE r.student_id = ?
+");
+$resultStmt->bind_param("i", $student_id);
+$resultStmt->execute();
+$results = $resultStmt->get_result();
+
+/* ================= ASSIGNMENTS ================= */
+$assignStmt = $conn->prepare("
+    SELECT s.name AS subject, a.title, a.description, a.due_date
+    FROM assignments a
+    JOIN subjects s ON s.id = a.subject_id
+    ORDER BY a.due_date ASC
+");
+$assignStmt->execute();
+$assignments = $assignStmt->get_result();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Student Dashboard</title>
-    <style>
-        /* Consistent Styling */
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f9; color: #333; }
-        .navbar { background-color: #007bff; padding: 1em; display: flex; justify-content: flex-end; gap: 1em; }
-        .navbar a { color: #fff; text-decoration: none; padding: 0.5em 1em; border-radius: 5px; transition: background-color 0.3s ease; }
-        .navbar a:hover { background-color: #0056b3; }
-        .container { width: 90%; max-width: 800px; margin: 20px auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); text-align: center; }
-        h1 { color: #444; margin-bottom: 15px; }
-        p { margin-bottom: 20px; color: #555; }
-        .features { margin-top: 30px; display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; }
-        .feature-link { 
-            display: inline-block; 
-            padding: 12px 20px; 
-            background-color: #17a2b8; /* Teal color */
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            transition: background-color 0.3s;
-            font-size: 16px;
-            min-width: 150px; /* Ensure buttons have some width */
-            text-align: center; /* Center text in button */
-        }
-        .feature-link:hover { background-color: #138496; }
-        .logout-btn { 
-            display: inline-block; 
-            margin-top: 30px;
-            padding: 10px 20px; 
-            background-color: #dc3545; /* Red color */
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            transition: background-color 0.3s;
-        }
-        .logout-btn:hover { background-color: #c82333; }
-    </style>
+<meta charset="UTF-8">
+<title>Student Dashboard</title>
+
+<style>
+/* 🔹 YOUR EXACT STYLES (UNCHANGED) */
+<?= file_get_contents("student-dashboard-style.css") ?>
+</style>
 </head>
 <body>
-    <div class="navbar">
-        <a href="../logout.php">Logout</a> <!-- Corrected path assuming student files are in a subfolder -->
+
+<div class="dashboard">
+    <div class="header">
+        <h1>Student Dashboard</h1>
+        <p><?= htmlspecialchars($student['name']) ?> | <?= htmlspecialchars($student['branch']) ?></p>
     </div>
 
-    <div class="container">
-        <!-- Replace 'Welcome!' with the name if you fetch it -->
-        <h1>Welcome!</h1> 
-        <p>Email: <?= htmlspecialchars($student_email) ?></p>
-        
-        <div class="features">
-            <a href="attendance.php" class="feature-link">View Attendance</a>
-            <a href="ia-results.php" class="feature-link">View IA Results</a>
-            <a href="take-test.php" class="feature-link">Take Assigned Test</a> <!-- Added Link -->
-            <!-- <a href="timetable.php" class="feature-link">View Timetable</a> -->
-            <!-- Add more links as features are developed -->
+    <div class="controls">
+        <button class="control-btn active" data-window="attendance">Attendance</button>
+        <button class="control-btn" data-window="results">Results</button>
+        <button class="control-btn" data-window="assignments">Assignments</button>
+    </div>
+
+    <div class="windows">
+
+        <!-- ================= ATTENDANCE ================= -->
+        <div class="window active" id="attendance">
+            <h2>Attendance</h2>
+            <div class="chart">
+                <?php foreach ($attendanceData as $a): ?>
+                    <div class="bar-container">
+                        <div class="bar" style="height: <?= $a['percentage'] ?>%;">
+                            <?= $a['percentage'] ?>%
+                        </div>
+                        <div class="label"><?= htmlspecialchars($a['subject']) ?></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
         </div>
 
-        <a href="../logout.php" class="logout-btn">Logout</a> <!-- Corrected path -->
+        <!-- ================= RESULTS ================= -->
+        <div class="window" id="results">
+            <h2>IA Results</h2>
+            <div class="marks-card">
+                <table width="100%" border="1">
+                    <tr>
+                        <th>Subject</th>
+                        <th>Marks</th>
+                        <th>Grade</th>
+                    </tr>
+                    <?php while ($r = $results->fetch_assoc()): 
+                        $grade = ($r['marks'] >= 90) ? 'A+' :
+                                 (($r['marks'] >= 75) ? 'A' :
+                                 (($r['marks'] >= 60) ? 'B' : 'C'));
+                    ?>
+                    <tr>
+                        <td><?= htmlspecialchars($r['subject']) ?></td>
+                        <td><?= $r['marks'] ?></td>
+                        <td><?= $grade ?></td>
+                    </tr>
+                    <?php endwhile; ?>
+                </table>
+                <button class="print-btn" onclick="window.print()">Print</button>
+            </div>
+        </div>
+
+        <!-- ================= ASSIGNMENTS ================= -->
+        <div class="window" id="assignments">
+            <h2>Assignments</h2>
+            <ul class="assignments">
+                <?php while ($a = $assignments->fetch_assoc()): ?>
+                    <li>
+                        <strong><?= htmlspecialchars($a['subject']) ?>:</strong>
+                        <?= htmlspecialchars($a['title']) ?><br>
+                        <?= htmlspecialchars($a['description']) ?><br>
+                        <b>Due:</b> <?= date("d M Y", strtotime($a['due_date'])) ?>
+                    </li>
+                <?php endwhile; ?>
+            </ul>
+        </div>
+
     </div>
+</div>
+
+<script>
+const buttons = document.querySelectorAll('.control-btn');
+const windows = document.querySelectorAll('.window');
+
+buttons.forEach(btn => {
+    btn.onclick = () => {
+        buttons.forEach(b => b.classList.remove('active'));
+        windows.forEach(w => w.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.window).classList.add('active');
+    };
+});
+</script>
+
 </body>
 </html>
-
-
