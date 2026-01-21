@@ -1,20 +1,20 @@
 <?php
 session_start();
-require 'db-config.php'; // PDO connection ($conn)
+require 'db-config.php'; // MUST create $pdo (PDO connection)
 
-// LOGIN CHECK (unchanged logic)
+// 🔐 Login check (DO NOT CHANGE)
 if (!isset($_SESSION['student_id'])) {
     header("Location: student-login.php");
     exit;
 }
 
-$student_id = $_SESSION['student_id'];
+// ✅ SESSION STORES USN
+$student_usn = $_SESSION['student_id'];
 
-
-// ==========================
-// FETCH STUDENT DETAILS
-// ==========================
-$studentStmt = $conn->prepare("
+/* ============================
+   FETCH STUDENT DETAILS
+   ============================ */
+$studentStmt = $pdo->prepare("
     SELECT 
         student_name,
         usn,
@@ -25,52 +25,53 @@ $studentStmt = $conn->prepare("
         semester,
         section
     FROM students
-    WHERE id = $1
+    WHERE usn = :usn
 ");
-$studentStmt->execute([$student_id]);
+$studentStmt->execute(['usn' => $student_usn]);
 $student = $studentStmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$student) {
     die("Student not found");
 }
 
-
-// ==========================
-// FETCH ATTENDANCE
-// ==========================
-$attendanceStmt = $conn->prepare("
+/* ============================
+   FETCH ATTENDANCE DATA
+   ============================ */
+$attendanceStmt = $pdo->prepare("
     SELECT 
-        s.name AS subject_name,
+        sub.name AS subject,
         a.total_classes,
         a.attended_classes
     FROM attendance a
-    JOIN subjects s ON s.id = a.subject_id
-    WHERE a.student_id = $1
+    JOIN subjects sub ON sub.id = a.subject_id
+    WHERE a.student_id = (
+        SELECT id FROM students WHERE usn = :usn
+    )
 ");
-$attendanceStmt->execute([$student_id]);
+$attendanceStmt->execute(['usn' => $student_usn]);
+$attendanceRows = $attendanceStmt->fetchAll(PDO::FETCH_ASSOC);
 
+/* Prepare chart data */
 $subjects = [];
 $percentages = [];
 
-while ($row = $attendanceStmt->fetch(PDO::FETCH_ASSOC)) {
-    $subjects[] = $row['subject_name'];
-
+foreach ($attendanceRows as $row) {
+    $subjects[] = $row['subject'];
     $percentages[] = ($row['total_classes'] > 0)
         ? round(($row['attended_classes'] / $row['total_classes']) * 100)
         : 0;
 }
 
-
-// ==========================
-// FETCH PRINCIPAL NOTIFICATIONS
-// ==========================
-$noteStmt = $conn->query("
+/* ============================
+   FETCH PRINCIPAL NOTIFICATIONS
+   ============================ */
+$notifyStmt = $pdo->query("
     SELECT message, created_at
     FROM notifications
     ORDER BY created_at DESC
     LIMIT 5
 ");
-$notifications = $noteStmt->fetchAll(PDO::FETCH_ASSOC);
+$notifications = $notifyStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -79,52 +80,49 @@ $notifications = $noteStmt->fetchAll(PDO::FETCH_ASSOC);
     <title>Student Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body {
-            font-family: Arial;
-            margin: 0;
-            background: #f4f6f9;
-        }
-
+        body { margin:0; font-family: Arial; background:#f4f6f9; }
         .navbar {
-            background: #003366;
-            padding: 12px;
-            display: flex;
-            justify-content: flex-end;
-            gap: 15px;
+            background:#003366;
+            padding:12px;
+            display:flex;
+            justify-content:flex-end;
+            gap:15px;
         }
-
         .navbar a {
-            color: #fff;
-            text-decoration: none;
-            font-weight: bold;
+            color:#fff;
+            text-decoration:none;
+            padding:6px 12px;
+            border-radius:4px;
         }
+        .navbar a:hover { background:#0056b3; }
 
         .student-strip {
-            background: #e3f2fd;
-            padding: 12px 20px;
-            font-size: 15px;
-            display: flex;
-            justify-content: space-between;
+            background:#e3f2fd;
+            padding:10px 20px;
+            font-weight:bold;
+            color:#003366;
         }
 
         .container {
-            width: 75%;
-            margin: 20px auto;
-            background: white;
-            padding: 25px;
-            border-radius: 8px;
+            width:70%;
+            margin:20px auto;
+            background:#fff;
+            padding:20px;
+            border-radius:8px;
+            box-shadow:0 0 10px rgba(0,0,0,0.1);
         }
 
-        canvas {
-            margin-top: 20px;
+        h2 { text-align:center; }
+
+        .notifications {
+            margin-top:30px;
+            background:#fff3cd;
+            padding:15px;
+            border-radius:6px;
+            border-left:5px solid #ffc107;
         }
 
-        .note-box {
-            margin-top: 30px;
-            background: #fff8e1;
-            padding: 15px;
-            border-left: 5px solid #ffc107;
-        }
+        canvas { margin-top:20px; }
     </style>
 </head>
 <body>
@@ -136,42 +134,41 @@ $notifications = $noteStmt->fetchAll(PDO::FETCH_ASSOC);
     <a href="stlogout.php">Logout</a>
 </div>
 
-<!-- STUDENT INFO STRIP (AFTER NAVBAR, LEFT SIDE) -->
+<!-- STUDENT INFO (AFTER NAVBAR, LEFT SIDE) -->
 <div class="student-strip">
-    <div>
-        <strong>Name:</strong> <?= htmlspecialchars($student['student_name']) ?><br>
-        <strong>USN:</strong> <?= htmlspecialchars($student['usn']) ?>
-    </div>
-    <div>
-        <strong>Branch:</strong> <?= htmlspecialchars($student['branch']) ?><br>
-        <strong>Semester:</strong> <?= htmlspecialchars($student['semester']) ?>
-    </div>
+    Name: <?= htmlspecialchars($student['student_name']) ?> |
+    USN: <?= htmlspecialchars($student['usn']) ?> |
+    Branch: <?= htmlspecialchars($student['branch']) ?>
 </div>
 
 <div class="container">
     <h2>Attendance Overview</h2>
     <canvas id="attendanceChart"></canvas>
 
-    <p style="text-align:center; margin-top:10px;">
-        Attendance percentage per subject
+    <p style="text-align:center; color:#555;">
+        Subject-wise attendance percentage
     </p>
 
     <!-- NOTIFICATIONS -->
-    <div class="note-box">
+    <div class="notifications">
         <strong>📢 Principal Notifications</strong>
         <ul>
-            <?php foreach ($notifications as $n): ?>
-                <li>
-                    <?= htmlspecialchars($n['message']) ?>
-                    <small>(<?= date("d-m-Y", strtotime($n['created_at'])) ?>)</small>
-                </li>
-            <?php endforeach; ?>
+            <?php if ($notifications): ?>
+                <?php foreach ($notifications as $n): ?>
+                    <li>
+                        <?= htmlspecialchars($n['message']) ?>
+                        <small>(<?= date("d-m-Y", strtotime($n['created_at'])) ?>)</small>
+                    </li>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <li>No notifications</li>
+            <?php endif; ?>
         </ul>
     </div>
 </div>
 
 <script>
-const ctx = document.getElementById('attendanceChart');
+const ctx = document.getElementById('attendanceChart').getContext('2d');
 new Chart(ctx, {
     type: 'bar',
     data: {
@@ -184,7 +181,10 @@ new Chart(ctx, {
     },
     options: {
         scales: {
-            y: { beginAtZero: true, max: 100 }
+            y: {
+                beginAtZero:true,
+                max:100
+            }
         }
     }
 });
