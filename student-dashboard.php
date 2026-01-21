@@ -277,28 +277,41 @@ Branch: <?= htmlspecialchars($student['branch'] ?? '') ?>
 </div>
 
 <script>
-function showTab(id){
-document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-document.getElementById(id).classList.add('active');
-}
-
-new Chart(document.getElementById('attChart'),{
-type:'bar',
-data:{
-labels: <?= json_encode(array_column($attendance,'name')) ?>,
-datasets:[{
-label:'Attendance %',
-data: <?= json_encode(array_column($attendance,'percentage')) ?>,
-backgroundColor:'#4caf50'
-}]
-},
-options:{
-responsive:true,
-scales:{y:{beginAtZero:true,max:100}}
-}
+new Chart(document.getElementById('attChart'), {
+    type: 'bar',
+    data: {
+        labels: <?= json_encode(array_column($attendance,'name')) ?>,
+        datasets: [{
+            label: 'Attendance %',
+            data: <?= json_encode(array_column($attendance,'percentage')) ?>,
+            backgroundColor: '#4caf50',
+            borderRadius: 6,
+            barThickness: 28   
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,  
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                    stepSize: 20
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                display: false
+            }
+        }
+    }
 });
 </script>
 
+
 </body>
 </html>
+
 
