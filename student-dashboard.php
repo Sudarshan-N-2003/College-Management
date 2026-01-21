@@ -229,6 +229,29 @@ th {
         padding: 6px;
     }
 }
+
+    /* ===== Chart Responsive Fix ===== */
+
+.chart-card {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.chart-wrapper {
+    width: 100%;
+    max-width: 420px;   /* desktop width */
+    height: 260px;
+}
+
+/* Mobile view */
+@media (max-width: 600px) {
+    .chart-wrapper {
+        max-width: 320px;   /* mobile width */
+        height: 220px;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -248,10 +271,13 @@ Branch: <?= htmlspecialchars($student['branch'] ?? '') ?>
 
 <!-- ATTENDANCE -->
 <div id="attendance" class="section active">
-<div class="card">
-<canvas id="attChart" height="120"></canvas>
+  <div class="card chart-card">
+    <div class="chart-wrapper">
+      <canvas id="attChart"></canvas>
+    </div>
+  </div>
 </div>
-</div>
+
 
 <!-- RESULTS -->
 <div id="results" class="section">
@@ -313,5 +339,6 @@ new Chart(document.getElementById('attChart'), {
 
 </body>
 </html>
+
 
 
