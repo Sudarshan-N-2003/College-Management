@@ -1,53 +1,62 @@
 <?php
 session_start();
 
+/* ---------- DB CONNECTION (INLINE – NO db-config.php REQUIRED) ---------- */
+$dsn = getenv('DATABASE_URL');
+if ($dsn) {
+    $db = parse_url($dsn);
+    $pdo = new PDO(
+        "pgsql:host={$db['host']};port={$db['port']};dbname=" . ltrim($db['path'], '/').";sslmode=require",
+        $db['user'],
+        $db['pass'],
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
+} else {
+    // local fallback
+    $pdo = new PDO(
+        "pgsql:host=localhost;port=5432;dbname=college_exam_portal",
+        "postgres",
+        "password",
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+    );
+}
+
+/* ---------- AUTH ---------- */
 if (!isset($_SESSION['student_id'])) {
     header("Location: student-login.php");
     exit;
 }
 
-require_once 'db.php'; // ✅ USE THIS (PDO connection)
-
-/* ---------------- STUDENT INFO ---------------- */
 $student_id = $_SESSION['student_id'];
 
-$stmt = $pdo->prepare("
-    SELECT student_name, usn, branch
-    FROM students
+/* ---------- STUDENT INFO ---------- */
+$stuStmt = $pdo->prepare("
+    SELECT student_name, usn, branch 
+    FROM students 
     WHERE id = :id
 ");
-$stmt->execute(['id' => $student_id]);
-$student = $stmt->fetch(PDO::FETCH_ASSOC);
+$stuStmt->execute(['id' => $student_id]);
+$student = $stuStmt->fetch();
 
 if (!$student) {
     die("Student not found");
 }
 
-$name   = $student['student_name'] ?? 'Student';
-$usn    = $student['usn'] ?? 'N/A';
-$branch = $student['branch'] ?? 'Not Assigned';
-
-/* ---------------- ATTENDANCE ---------------- */
+/* ---------- ATTENDANCE ---------- */
 $attStmt = $pdo->prepare("
-    SELECT s.name AS subject, a.total_classes, a.attended_classes
+    SELECT s.name AS subject,
+           COUNT(a.id) AS total,
+           SUM(CASE WHEN a.status = 'present' THEN 1 ELSE 0 END) AS present
     FROM attendance a
     JOIN subjects s ON s.id = a.subject_id
     WHERE a.student_id = :sid
+    GROUP BY s.name
 ");
 $attStmt->execute(['sid' => $student_id]);
+$attendance = $attStmt->fetchAll();
 
-$subjects = [];
-$percentages = [];
-
-while ($row = $attStmt->fetch(PDO::FETCH_ASSOC)) {
-    $subjects[] = $row['subject'];
-    $percentages[] = ($row['total_classes'] > 0)
-        ? round(($row['attended_classes'] / $row['total_classes']) * 100)
-        : 0;
-}
-
-/* ---------------- RESULTS ---------------- */
-$stmt = $pdo->prepare("
+/* ---------- IA RESULTS ---------- */
+$resStmt = $pdo->prepare("
     SELECT 
         s.name AS subject,
         r.marks,
@@ -58,137 +67,107 @@ $stmt = $pdo->prepare("
     WHERE r.student_id = :sid
     ORDER BY r.created_at DESC
 ");
-$stmt->execute(['sid' => $student_id]);
+$resStmt->execute(['sid' => $student_id]);
+$results = $resStmt->fetchAll();
 
-$results = $resStmt->fetchAll(PDO::FETCH_ASSOC);
-
-
-/* ---------------- ASSIGNMENTS ---------------- */
-$assignments = [];
-try {
-    $asgStmt = $pdo->prepare("
-        SELECT title, due_date
-        FROM assignments
-        WHERE branch = :branch
-        ORDER BY due_date
-    ");
-    $asgStmt->execute(['branch' => $branch]);
-    $assignments = $asgStmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
-    // table may not exist — ignore safely
-}
+/* ---------- ASSIGNMENTS (optional dummy / extend later) ---------- */
+$assignments = [
+    "Submit DBMS Assignment by Friday",
+    "Complete CN Lab Record",
+    "Mini Project Phase-1 Submission"
+];
 ?>
+
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
 <title>Student Dashboard</title>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 body{margin:0;font-family:Arial;background:#f4f6f9}
-.header{background:#003366;color:#fff;text-align:center;padding:15px}
-.student-info{background:#e9f2ff;padding:10px;font-weight:bold}
-.navbar{display:flex;justify-content:center;background:#0056b3}
-.navbar button{border:none;background:none;color:#fff;padding:14px 25px;font-size:16px;cursor:pointer}
-.navbar button.active{background:#003366}
-.container{max-width:1100px;margin:auto;padding:20px}
-.window{display:none}
-.window.active{display:block}
-.chart-box{max-width:600px;height:320px;margin:auto}
-table{width:100%;border-collapse:collapse;background:#fff}
-th,td{border:1px solid #ccc;padding:10px;text-align:center}
-th{background:#003366;color:#fff}
-.assignment{background:#fff;padding:15px;border-left:5px solid #007bff;margin-bottom:10px}
+.header{background:#003366;color:#fff;padding:15px}
+.header b{font-size:18px}
+.tabs{display:flex;gap:10px;padding:10px;background:#eee}
+.tabs button{padding:10px 20px;border:none;cursor:pointer}
+.tabs button.active{background:#003366;color:#fff}
+.section{display:none;padding:20px}
+.section.active{display:block}
+canvas{max-width:600px;margin:auto}
+.card{background:#fff;padding:15px;margin:10px 0;border-radius:8px}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #ccc;padding:8px;text-align:center}
 </style>
 </head>
 
 <body>
 
 <div class="header">
-    <h2>Vijaya Vittala Institute of Technology</h2>
-    <p>Student Dashboard</p>
+    <b><?= htmlspecialchars($student['student_name'] ?? '') ?></b> |
+    USN: <?= htmlspecialchars($student['usn'] ?? '') ?> |
+    Branch: <?= htmlspecialchars($student['branch'] ?? '') ?>
 </div>
 
-<div class="student-info">
-    Name: <?= htmlspecialchars($name) ?> |
-    USN: <?= htmlspecialchars($usn) ?> |
-    Branch: <?= htmlspecialchars($branch) ?>
+<div class="tabs">
+    <button class="tab active" onclick="openTab('att')">Attendance</button>
+    <button class="tab" onclick="openTab('res')">Results</button>
+    <button class="tab" onclick="openTab('ass')">Assignments</button>
 </div>
 
-<div class="navbar">
-    <button class="tab active" onclick="showTab('attendance')">Attendance</button>
-    <button class="tab" onclick="showTab('results')">Results</button>
-    <button class="tab" onclick="showTab('assignments')">Assignments</button>
-</div>
-
-<div class="container">
-
-<!-- Attendance -->
-<div id="attendance" class="window active">
-    <h3>Attendance Overview</h3>
-    <div class="chart-box">
+<!-- ATTENDANCE -->
+<div id="att" class="section active">
+    <div class="card">
         <canvas id="attChart"></canvas>
     </div>
 </div>
 
-<!-- Results -->
-<div id="results" class="window">
-    <h3>IA Results</h3>
-    <table>
-        <tr><th>Subject</th><th>Marks</th></tr>
-        <?php if ($results): foreach ($results as $r): ?>
+<!-- RESULTS -->
+<div id="res" class="section">
+    <div class="card">
+        <table>
+            <tr><th>Subject</th><th>Marks</th><th>Max</th></tr>
+            <?php foreach ($results as $r): ?>
             <tr>
                 <td><?= htmlspecialchars($r['subject']) ?></td>
-                <td><?= htmlspecialchars($r['marks']) ?></td>
+                <td><?= $r['marks'] ?></td>
+                <td><?= $r['max_marks'] ?></td>
             </tr>
-        <?php endforeach; else: ?>
-            <tr><td colspan="2">No results</td></tr>
-        <?php endif; ?>
-    </table>
+            <?php endforeach; ?>
+        </table>
+    </div>
 </div>
 
-<!-- Assignments -->
-<div id="assignments" class="window">
-    <h3>Assignments</h3>
-    <?php if ($assignments): foreach ($assignments as $a): ?>
-        <div class="assignment">
-            <strong><?= htmlspecialchars($a['title']) ?></strong><br>
-            Due: <?= htmlspecialchars($a['due_date']) ?>
-        </div>
-    <?php endforeach; else: ?>
-        <p>No assignments available</p>
-    <?php endif; ?>
-</div>
-
+<!-- ASSIGNMENTS -->
+<div id="ass" class="section">
+    <div class="card">
+        <ul>
+            <?php foreach ($assignments as $a): ?>
+                <li><?= htmlspecialchars($a) ?></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
 </div>
 
 <script>
-function showTab(id){
-    document.querySelectorAll('.window').forEach(w=>w.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+function openTab(id){
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     event.target.classList.add('active');
 }
 
+/* Attendance Chart */
+const labels = <?= json_encode(array_column($attendance,'subject')) ?>;
+const data = <?= json_encode(array_map(fn($a)=>$a['total']>0?round($a['present']*100/$a['total']):0,$attendance)) ?>;
+
 new Chart(document.getElementById('attChart'),{
     type:'bar',
-    data:{
-        labels:<?= json_encode($subjects) ?>,
-        datasets:[{
-            data:<?= json_encode($percentages) ?>,
-            backgroundColor:'#3498db',
-            barThickness:40
-        }]
-    },
-    options:{
-        maintainAspectRatio:false,
-        scales:{y:{beginAtZero:true,max:100}},
-        plugins:{legend:{display:false}}
-    }
+    data:{labels,datasets:[{label:'Attendance %',data,backgroundColor:'#007bff'}]},
+    options:{scales:{y:{beginAtZero:true,max:100}}}
 });
 </script>
 
 </body>
 </html>
-
-
