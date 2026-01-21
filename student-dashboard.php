@@ -5,7 +5,8 @@ if (!isset($_SESSION['student_id'])) {
     exit;
 }
 
-require_once 'db-config.php'; // PDO connection as $conn
+require_once 'db.php'; // this creates $pdo
+
 
 $student_id = $_SESSION['student_id'];
 
@@ -257,3 +258,4 @@ new Chart(document.getElementById('attendanceChart'), {
 
 </body>
 </html>
+
