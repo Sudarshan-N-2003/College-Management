@@ -55,16 +55,180 @@ $results = $resStmt->fetchAll();
 <title>Student Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body{margin:0;font-family:Arial;background:#eef2f7}
-.header{background:#003366;color:#fff;padding:15px}
-.tabs{background:#fff;padding:10px;text-align:center}
-.tabs button{padding:10px 20px;margin:5px;border:none;background:#007bff;color:#fff}
-.section{display:none;padding:20px}
-.section.active{display:block}
-.card{background:#fff;padding:20px;border-radius:8px}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #ccc;padding:8px;text-align:center}
-.logout{float:right;color:#fff;text-decoration:none}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #eef2f7;
+    color: #333;
+    line-height: 1.6;
+    font-size: 16px;
+}
+
+/* Header */
+.header {
+    background-color: #003366;
+    color: #fff;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.header b {
+    font-size: 1.2rem;
+}
+
+.logout {
+    color: #fff;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.3s ease;
+}
+
+.logout:hover {
+    color: #ddd;
+}
+
+/* Tabs */
+.tabs {
+    background-color: #fff;
+    padding: 10px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tabs button {
+    padding: 10px 20px;
+    margin: 5px;
+    border: none;
+    background-color: #007bff;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: background-color 0.3s ease;
+}
+
+.tabs button:hover {
+    background-color: #0056b3;
+}
+
+/* Sections */
+.section {
+    display: none;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.section.active {
+    display: block;
+}
+
+/* Cards */
+.card {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    border: 1px solid #ccc;
+    padding: 12px;
+    text-align: center;
+}
+
+th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+}
+
+/* Chart canvas */
+#attChart {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        text-align: center;
+        padding: 10px;
+    }
+
+    .header b {
+        font-size: 1rem;
+    }
+
+    .tabs {
+        padding: 5px;
+    }
+
+    .tabs button {
+        display: block;
+        width: 100%;
+        margin: 5px 0;
+        padding: 12px;
+    }
+
+    .section {
+        padding: 10px;
+    }
+
+    .card {
+        padding: 15px;
+    }
+
+    table {
+        font-size: 0.9rem;
+        overflow-x: auto;
+        display: block;
+        white-space: nowrap;
+    }
+
+    th, td {
+        padding: 8px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        font-size: 14px;
+    }
+
+    .header {
+        padding: 8px;
+    }
+
+    .section {
+        padding: 5px;
+    }
+
+    .card {
+        padding: 10px;
+    }
+
+    th, td {
+        padding: 6px;
+    }
+}
 </style>
 </head>
 <body>
@@ -137,3 +301,4 @@ scales:{y:{beginAtZero:true,max:100}}
 
 </body>
 </html>
+
