@@ -48,12 +48,14 @@ while ($row = $attStmt->fetch(PDO::FETCH_ASSOC)) {
 
 /* ---------------- RESULTS ---------------- */
 $resStmt = $pdo->prepare("
-    SELECT subject, marks
-    FROM ia_results
-    WHERE student_id = :sid
+    SELECT s.name AS subject, r.marks
+    FROM ia_results r
+    JOIN subjects s ON s.id = r.subject_id
+    WHERE r.student_id = :sid
 ");
 $resStmt->execute(['sid' => $student_id]);
 $results = $resStmt->fetchAll(PDO::FETCH_ASSOC);
+
 
 /* ---------------- ASSIGNMENTS ---------------- */
 $assignments = [];
@@ -182,3 +184,4 @@ new Chart(document.getElementById('attChart'),{
 
 </body>
 </html>
+
