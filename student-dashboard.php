@@ -132,8 +132,8 @@ body {
 /* ===== CHART FIX ===== */
 .chart-wrapper {
     width: 100%;
-    max-width: 420px;
-    height: 260px;
+    max-width: 900px;
+    height: 860px;
     margin: auto;
 }
 
