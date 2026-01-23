@@ -1,4 +1,4 @@
-College Exam Management Portal (AMC)
+College Exam Management Portal (VVIT)
 
 This project is a web-based application designed to streamline various tasks related to college examinations, staff management, and student records. It provides different dashboards and functionalities based on user roles (Admin, Staff, HOD, Principal, Student).
 
