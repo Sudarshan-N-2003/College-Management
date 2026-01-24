@@ -1,7 +1,8 @@
 <?php
 session_start();
+
+require_once 'db.php';      // <-- THIS CREATES $pdo
 require 'vendor/autoload.php';
-require_once 'db.php'; // MUST define $conn (PDO)
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
@@ -11,8 +12,16 @@ if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin','staff','
     exit;
 }
 
+if (!isset($_SESSION['user_id'])) {
+    die("User session expired");
+}
+
 /* ================= FETCH SUBJECTS ================= */
-$subjects = $conn->query("SELECT id, name FROM subjects ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$subjects = $pdo->query("
+    SELECT id, name 
+    FROM subjects 
+    ORDER BY name
+")->fetchAll(PDO::FETCH_ASSOC);
 
 $message = "";
 $type = "";
@@ -52,7 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* ================= IA MODE ================= */
         if ($mode === 'ia') {
-            // Columns:
             // Unit | Question | Marks | CO | PO | RBT | Image_URL
             foreach ($rows as $i => $r) {
                 if ($i === 0) continue;
@@ -101,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         shuffle($questions);
 
-        /* ================= PICK QUESTIONS TO MAKE ~50 ================= */
+        /* ================= PICK QUESTIONS ================= */
         $selected = [];
         $sum = 0;
 
@@ -113,12 +121,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($sum >= 45) break;
         }
 
-        /* ================= SAVE QP ================= */
-        $stmt = $conn->prepare("
+        /* ================= SAVE QUESTION PAPER ================= */
+        $stmt = $pdo->prepare("
             INSERT INTO question_papers 
             (staff_id, subject_id, title, content, exam_time, mode)
             VALUES (?,?,?,?,?,?)
         ");
+
         $stmt->execute([
             $staff_id,
             $subject_id,
